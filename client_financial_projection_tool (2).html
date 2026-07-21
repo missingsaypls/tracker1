@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Financial Projection Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#F5F6F3;
+    --surface:#FFFFFF;
+    --surface-alt:#EEF0EA;
+    --border:#DBDFD5;
+    --border-strong:#C3C9BA;
+    --ink:#1F2A22;
+    --ink-muted:#5C6A5F;
+    --ink-faint:#8B978C;
+    --accent:#1F6F54;
+    --accent-dark:#154F3C;
+    --accent-soft:#DCEAE3;
+    --risk-on:#2C5FA8;
+    --risk-on-soft:#DCE7F5;
+    --risk-off:#1F6F54;
+    --risk-off-soft:#DCEAE3;
+    --warn:#B8792E;
+    --warn-soft:#F3E4CE;
+    --danger:#A23B2E;
+    --danger-soft:#F5DCD7;
+    --radius:8px;
+    --shadow:0 1px 2px rgba(31,42,34,0.06), 0 1px 1px rgba(31,42,34,0.04);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    font-size:14px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{
+    font-family:'Source Serif 4', Georgia, serif;
+    font-weight:600;
+    color:var(--ink);
+    margin:0 0 4px 0;
+    letter-spacing:-0.01em;
+  }
+  .mono{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  button{ font-family:inherit; cursor:pointer; }
+  input,select{ font-family:inherit; }
+
+  /* ===== Layout ===== */
+  #app{ display:flex; min-height:100vh; }
+  .sidebar{
+    width:220px; flex-shrink:0;
+    background:var(--surface);
+    border-right:1px solid var(--border);
+    display:flex; flex-direction:column;
+    position:sticky; top:0; height:100vh;
+  }
+  .brand{
+    padding:20px 18px 14px 18px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand .eyebrow{
+    text-transform:uppercase; letter-spacing:0.08em; font-size:10px;
+    color:var(--ink-faint); font-weight:600; margin-bottom:4px;
+  }
+  .brand h1{ font-size:17px; line-height:1.25; }
+  .nav{ flex:1; overflow-y:auto; padding:10px 10px; }
+  .nav button{
+    display:flex; align-items:center; gap:9px;
+    width:100%; text-align:left; padding:9px 10px; margin-bottom:2px;
+    background:none; border:none; border-radius:6px;
+    color:var(--ink-muted); font-size:13.5px; font-weight:500;
+    transition:background .12s, color .12s;
+  }
+  .nav button .num{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-faint);
+    width:16px; flex-shrink:0;
+  }
+  .nav button:hover{ background:var(--surface-alt); color:var(--ink); }
+  .nav button.active{ background:var(--accent-soft); color:var(--accent-dark); font-weight:600; }
+  .nav button.active .num{ color:var(--accent-dark); }
+  .sidebar-foot{ padding:12px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:6px; }
+
+  .main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  .topbar{
+    background:var(--surface); border-bottom:1px solid var(--border);
+    padding:12px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px;
+    position:sticky; top:0; z-index:20;
+  }
+  .topbar .client-name{ font-family:'Source Serif 4',serif; font-size:16px; font-weight:600; }
+  .topbar .client-sub{ font-size:12px; color:var(--ink-muted); }
+  .topbar-actions{ display:flex; gap:8px; }
+  .content{ padding:24px; flex:1; }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  /* ===== Buttons ===== */
+  .btn{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:7px 13px; border-radius:6px; border:1px solid var(--border-strong);
+    background:var(--surface); color:var(--ink); font-size:12.5px; font-weight:600;
+    white-space:nowrap;
+  }
+  .btn:hover{ background:var(--surface-alt); }
+  .btn-primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn-primary:hover{ background:var(--accent-dark); }
+  .btn-ghost{ border-color:transparent; background:none; color:var(--ink-muted); }
+  .btn-ghost:hover{ background:var(--surface-alt); color:var(--ink); }
+  .btn-sm{ padding:4px 9px; font-size:11.5px; }
+  .btn-add{ margin-top:8px; border-style:dashed; color:var(--accent-dark); }
+
+  /* ===== Cards / forms ===== */
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 20px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  .card-title{ font-size:15px; margin-bottom:2px; }
+  .card-desc{ font-size:12.5px; color:var(--ink-muted); margin-bottom:14px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+  .field{ display:flex; flex-direction:column; gap:5px; }
+  .field label{ font-size:11.5px; font-weight:600; color:var(--ink-muted); text-transform:uppercase; letter-spacing:0.02em; }
+  .field .hint{ font-size:11px; color:var(--ink-faint); font-weight:400; text-transform:none; letter-spacing:0; }
+  .field input[type=text], .field input[type=number], .field select{
+    padding:8px 10px; border:1px solid var(--border-strong); border-radius:6px;
+    background:#fff; font-size:13.5px; color:var(--ink); width:100%;
+  }
+  .field input:focus, .field select:focus, .list-editor input:focus, .list-editor select:focus{
+    outline:2px solid var(--accent); outline-offset:-1px; border-color:var(--accent);
+  }
+  .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:13px; }
+  .checkbox-row input{ width:15px; height:15px; }
+  .subtle-panel{ background:var(--surface-alt); border:1px solid var(--border); border-radius:6px; padding:14px 16px; margin-top:10px; }
+  .divider{ height:1px; background:var(--border); margin:16px 0; }
+  .info-box{
+    background:var(--accent-soft); border:1px solid #BFDACE; border-radius:6px;
+    padding:12px 14px; font-size:12.5px; color:var(--accent-dark); margin-bottom:14px;
+  }
+  .info-box b{ font-weight:700; }
+  details.collapse{ border:1px solid var(--border); border-radius:6px; padding:0; margin-top:6px; background:var(--surface-alt); }
+  details.collapse summary{ padding:10px 14px; cursor:pointer; font-weight:600; font-size:12.5px; color:var(--ink-muted); list-style:none; }
+  details.collapse summary::-webkit-details-marker{ display:none; }
+  details.collapse summary:before{ content:'▸ '; }
+  details.collapse[open] summary:before{ content:'▾ '; }
+  details.collapse .collapse-body{ padding:4px 14px 14px 14px; }
+
+  /* ===== List editors ===== */
+  .list-editor-wrap{ overflow-x:auto; }
+  table.list-editor{ border-collapse:collapse; width:100%; min-width:600px; }
+  table.list-editor th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:0.03em;
+    color:var(--ink-faint); font-weight:600; padding:0 8px 6px 8px; white-space:nowrap;
+  }
+  table.list-editor td{ padding:3px 8px 3px 0; vertical-align:middle; }
+  table.list-editor input, table.list-editor select{
+    padding:6px 8px; border:1px solid var(--border-strong); border-radius:5px; font-size:12.5px; width:100%; min-width:90px; background:#fff;
+  }
+  table.list-editor input[type=checkbox]{ width:15px; min-width:15px; }
+  .btn-icon-del{
+    background:none; border:none; color:var(--danger); font-size:14px; padding:4px 8px; border-radius:5px;
+  }
+  .btn-icon-del:hover{ background:var(--danger-soft); }
+  .empty-row{ color:var(--ink-faint); font-size:12.5px; font-style:italic; padding:8px 0; }
+
+  /* ===== Tags ===== */
+  .tag{ display:inline-block; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.02em; }
+  .tag-risk-on{ background:var(--risk-on-soft); color:var(--risk-on); }
+  .tag-risk-off{ background:var(--risk-off-soft); color:var(--risk-off); }
+
+  /* ===== Ledger ===== */
+  .ledger-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-bottom:12px; }
+  .ledger-toolbar .group-toggles{ display:flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--ink-muted); }
+  .ledger-toolbar .group-toggles label{ display:flex; align-items:center; gap:5px; cursor:pointer; }
+  .shortfall-banner{
+    background:var(--danger-soft); border:1px solid #E0BAB2; color:var(--danger);
+    padding:10px 14px; border-radius:6px; font-size:12.5px; font-weight:600; margin-bottom:12px;
+  }
+  .ledger-scroll{ overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius); background:#fff; }
+  table.ledger{ border-collapse:collapse; width:100%; font-size:12px; }
+  table.ledger th, table.ledger td{ padding:6px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--border); }
+  table.ledger th{
+    position:sticky; top:0; background:var(--surface-alt); z-index:3; font-weight:700;
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.02em; color:var(--ink-muted);
+  }
+  table.ledger thead tr.group-row th{ top:0; background:#E4E8DE; font-size:10px; color:var(--ink); border-bottom:1px solid var(--border-strong); }
+  table.ledger thead tr.col-row th{ top:24px; }
+  table.ledger td.col-age, table.ledger th.col-age{ position:sticky; left:0; width:48px; min-width:48px; max-width:48px; background:#fff; z-index:2; text-align:center; font-weight:700; border-right:1px solid var(--border-strong); }
+  table.ledger th.col-age{ background:var(--surface-alt); z-index:4; }
+  table.ledger td.col-year{ position:sticky; left:48px; width:60px; min-width:60px; max-width:60px; background:#fff; z-index:2; text-align:center; color:var(--ink-muted); border-right:1px solid var(--border-strong); }
+  table.ledger th.col-year{ position:sticky; left:48px; width:60px; min-width:60px; max-width:60px; background:var(--surface-alt); z-index:4; text-align:center; border-right:1px solid var(--border-strong); }
+  table.ledger tbody tr:nth-child(10n+1){ border-top:2px solid var(--border-strong); }
+  table.ledger tbody tr.retired-row{ background:#FAFBF8; }
+  table.ledger tbody tr:hover td{ background:#F1F3EC; }
+  table.ledger tbody tr:hover td.col-age, table.ledger tbody tr:hover td.col-year{ background:#EAEDE3; }
+  table.ledger td.neg{ color:var(--danger); font-weight:600; }
+  table.ledger td.pos-strong{ color:var(--accent-dark); }
+  table.ledger tr.shortfall-row td{ background:var(--danger-soft) !important; }
+  .ledger-wrap.hide-income [data-group=income]{ display:none; }
+  .ledger-wrap.hide-expenses [data-group=expenses]{ display:none; }
+  .ledger-wrap.hide-cashflow [data-group=cashflow]{ display:none; }
+  .ledger-wrap.hide-cpf [data-group=cpf]{ display:none; }
+  .ledger-wrap.hide-investments [data-group=investments]{ display:none; }
+  .ledger-wrap.hide-policies [data-group=policies]{ display:none; }
+  .ledger-wrap.hide-allocation [data-group=allocation]{ display:none; }
+
+  /* ===== Charts ===== */
+  .chart-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .chart-card canvas{ max-height:280px; }
+  .chart-card .chart-title{ font-size:13.5px; font-weight:700; margin-bottom:2px; }
+  .chart-card .chart-desc{ font-size:11.5px; color:var(--ink-muted); margin-bottom:10px; }
+  .stat-row{ display:flex; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; min-width:150px; box-shadow:var(--shadow); }
+  .stat .stat-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:0.03em; color:var(--ink-faint); font-weight:700; margin-bottom:4px; }
+  .stat .stat-value{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; color:var(--ink); }
+  .stat .stat-value.danger{ color:var(--danger); }
+  .year-picker{ display:flex; align-items:center; gap:8px; font-size:12.5px; margin-bottom:14px; }
+  .year-picker input[type=range]{ flex:1; max-width:320px; }
+
+  @media (max-width: 900px){
+    #app{ flex-direction:column; }
+    .sidebar{ width:100%; height:auto; position:relative; flex-direction:row; }
+    .nav{ display:flex; overflow-x:auto; padding:8px; }
+    .nav button{ width:auto; white-space:nowrap; }
+    .brand, .sidebar-foot{ display:none; }
+    .chart-grid{ grid-template-columns:1fr; }
+    .grid{ grid-template-columns:1fr 1fr; }
+  }
+
+  @media print{
+    .sidebar, .topbar-actions, .ledger-toolbar, .btn{ display:none !important; }
+    .panel{ display:none !important; }
+    .panel#panel-ledger{ display:block !important; }
+    .content{ padding:0; }
+    table.ledger th{ position:static; }
+    table.ledger td.col-age, table.ledger td.col-year{ position:static; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ================= SIDEBAR ================= -->
+  <div class="sidebar">
+    <div class="brand">
+      <div class="eyebrow">Financial Planning</div>
+      <h1>Client Cash Flow &amp; Projection Tool</h1>
+    </div>
+    <div class="nav" id="nav"></div>
+    <div class="sidebar-foot">
+      <button class="btn btn-sm" onclick="loadExample()">Load example client</button>
+      <button class="btn btn-sm" onclick="resetState()">New blank client</button>
+    </div>
+  </div>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="client-name" id="topClientName">Untitled client</div>
+        <div class="client-sub" id="topClientSub">—</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn" onclick="document.getElementById('importFile').click()">Import plan</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none" onchange="handleImport(event)">
+        <button class="btn" onclick="exportJSON()">Export plan (.json)</button>
+        <button class="btn btn-primary" onclick="exportCSV()">Export ledger (.csv)</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ===== PANEL: CLIENT & ASSUMPTIONS ===== -->
+      <div class="panel active" id="panel-client">
+        <div class="info-box">
+          This tool projects a client's full cash flow, CPF, and asset position year by year. Fill in each tab from left to right — the <b>Ledger</b> and <b>Charts</b> tabs update automatically. Nothing here is saved automatically: use <b>Export plan</b> to save a client's file, and <b>Import plan</b> to reopen it later. All figures are planning estimates, not guarantees — see the note on assumptions below.
+        </div>
+        <div class="card">
+          <div class="card-title">Client details</div>
+          <div class="card-desc">Basic identifiers used to anchor the projection.</div>
+          <div class="grid">
+            <div class="field"><label>Client name</label><input type="text" id="f-clientName" placeholder="e.g. Tan Wei Ming"></div>
+            <div class="field"><label>Current age</label><input type="number" id="f-currentAge" min="0" max="99"></div>
+            <div class="field"><label>Current year</label><input type="number" id="f-currentYear"></div>
+            <div class="field"><label>Project until age</label><input type="number" id="f-endAge" min="1" max="120"><span class="hint">Typically life expectancy, e.g. 99</span></div>
+            <div class="field">
+              <label>Residency status</label>
+              <select id="f-residency">
+                <option value="SC">Singapore Citizen</option>
+                <option value="PR">Permanent Resident (3rd yr+, full rates)</option>
+                <option value="EP">Employment Pass / foreign worker (no CPF)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Growth &amp; rate assumptions</div>
+          <div class="card-desc">These drive every projection in the tool. Agree them with the client and revisit at each review.</div>
+          <div class="grid">
+            <div class="field"><label>General expense inflation (%/yr)</label><input type="number" step="0.1" id="f-inflation"></div>
+            <div class="field"><label>CPF OA interest (%/yr)</label><input type="number" step="0.1" id="f-oaRate"></div>
+            <div class="field"><label>CPF SA / MA / RA interest (%/yr)</label><input type="number" step="0.1" id="f-samaRate"></div>
+            <div class="field"><label>Full Retirement Sum at 55 ($)</label><input type="number" step="100" id="f-frs"><span class="hint">Default: 2026 cohort FRS. Adjust for client's cohort year.</span></div>
+            <div class="field"><label>Basic Healthcare Sum today ($)</label><input type="number" step="100" id="f-bhs"><span class="hint">Cap on Medisave. Excess flows to SA/RA. Locks for life at 65.</span></div>
+            <div class="field"><label>BHS annual growth (%)</label><input type="number" step="0.1" id="f-bhsGrowth"></div>
+          </div>
+          <details class="collapse">
+            <summary>Advanced CPF ceilings (rarely need changing)</summary>
+            <div class="collapse-body grid">
+              <div class="field"><label>Ordinary Wage ceiling ($/month)</label><input type="number" step="10" id="f-owCeiling"></div>
+              <div class="field"><label>Annual Total Wage ceiling ($/yr)</label><input type="number" step="100" id="f-awCeiling"></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="card">
+          <div class="card-title">How this tool models CPF &amp; projections — please read</div>
+          <div class="card-desc" style="color:var(--ink)">
+            <ul style="margin:0; padding-left:18px; line-height:1.8;">
+              <li>CPF contribution and allocation rates follow the CPF Board's 2026 age-band schedule (bands: ≤35, 36–45, 46–50, 51–55, 56–60, 61–65, 66–70, 70+). Rates are applied annually, not month-by-month, so figures are planning-grade rather than payroll-exact.</li>
+              <li>Extra interest (+1% below 55 on the first $60,000 combined; +2%/+1% tiered from 55 on the first $60,000) is approximated using CPF's published order of allocation (OA up to $20,000, then SA/RA, then MA).</li>
+              <li>Medisave is capped at the Basic Healthcare Sum. Any contribution or interest that would push MA above it flows instead to SA (below 55) or RA (55 and above), as CPF rules require. BHS is treated as fixed for life once the client turns 65.</li>
+              <li>At age 55, SA closes and transfers fully into a new Retirement Account, topped up from OA up to the Full Retirement Sum you set above. Any OA balance beyond that stays in OA.</li>
+              <li>CPF OA only becomes available for drawdown once the client is 55 or older <i>and</i> their RA has reached the Full Retirement Sum — matching CPF's actual withdrawal rules. Set this up on the Drawdown sequence tab.</li>
+              <li>Risk-on vs. risk-off allocation counts CPF OA and SA/RA, plus liquid cash above the emergency reserve you set, as risk-off. Medisave and the emergency reserve itself are treated as earmarked, not part of the investable allocation.</li>
+              <li>CPF LIFE monthly payout is <b>not calculated</b> by this tool — actuarial payout tables aren't public in a form this tool can model reliably. Enter your client's estimated payout from the official CPF LIFE Estimator into the Cash &amp; CPF LIFE tab.</li>
+              <li>New PRs in their 1st/2nd year (graduated rates) aren't modelled — full rates are assumed. Adjust the income figures manually if this applies.</li>
+              <li>Income, contributions and expenses shift on 1 January of the year they take effect — there's no mid-year proration.</li>
+              <li>No income tax, CPF housing withdrawal, or property value is modelled — add income tax as a fixed yearly expense, and treat property as outside this cash-flow ledger unless you want to add its rental yield or sale proceeds as an income line.</li>
+              <li>When liquid cash would run short in a year, the tool automatically draws down from investments, policies, and (if eligible) CPF OA in the order you set on the Drawdown sequence tab, before letting cash go negative.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: INCOME ===== -->
+      <div class="panel" id="panel-income">
+        <div class="card">
+          <div class="card-title">Employment income</div>
+          <div class="card-desc">Base salary, bonus, and when it changes.</div>
+          <div class="grid">
+            <div class="field"><label>Gross base monthly income ($)</label><input type="number" step="50" id="f-grossMonthly"></div>
+            <div class="field"><label>Annual increase in base income (%)</label><input type="number" step="0.1" id="f-incomeGrowth"></div>
+            <div class="field"><label>Bonus (months of base salary / yr)</label><input type="number" step="0.1" id="f-bonusMonths"></div>
+            <div class="field"><label>Year client fully stops working</label><input type="number" id="f-retirementYear"><span class="hint">Used unless the bridge phase below is enabled</span></div>
+          </div>
+          <div class="divider"></div>
+          <div class="checkbox-row"><input type="checkbox" id="f-bridgeEnabled"><label for="f-bridgeEnabled" style="font-weight:600;">Client will step down to a lower income for a period before fully retiring</label></div>
+          <div class="subtle-panel" id="bridgePanel">
+            <div class="grid">
+              <div class="field"><label>Step-down starts (year)</label><input type="number" id="f-bridgeStart"></div>
+              <div class="field"><label>Step-down ends (year)</label><input type="number" id="f-bridgeEnd"><span class="hint">Full retirement begins the year after this</span></div>
+              <div class="field">
+                <label>How is the lower income set?</label>
+                <select id="f-bridgeMode">
+                  <option value="absolute">Flat monthly amount</option>
+                  <option value="percent">% decrease from projected salary</option>
+                </select>
+              </div>
+              <div class="field"><label>Annual increase during step-down (%)</label><input type="number" step="0.1" id="f-bridgeGrowth"></div>
+            </div>
+            <div class="grid" id="bridgeAbsoluteFields" style="margin-top:10px;">
+              <div class="field"><label>Lower monthly income during step-down ($)</label><input type="number" step="50" id="f-bridgeIncome"></div>
+            </div>
+            <div class="grid" id="bridgePercentFields" style="margin-top:10px; display:none;">
+              <div class="field"><label>Decrease from projected salary (%)</label><input type="number" step="1" id="f-bridgeDecreasePct"><span class="hint">e.g. 40 means the client earns 40% less than their salary would otherwise be that year</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Existing CPF balances (today)</div>
+          <div class="card-desc">If the client is already 55 or older, enter their Retirement Account balance and leave Special Account at 0 (SA closes at 55).</div>
+          <div class="grid">
+            <div class="field"><label>Ordinary Account (OA)</label><input type="number" step="100" id="f-cpfOA"></div>
+            <div class="field"><label>Special Account (SA)</label><input type="number" step="100" id="f-cpfSA"></div>
+            <div class="field"><label>Retirement Account (RA)</label><input type="number" step="100" id="f-cpfRA"></div>
+            <div class="field"><label>Medisave Account (MA)</label><input type="number" step="100" id="f-cpfMA"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Rental income</div>
+          <div class="card-desc">One row per property. Step-ups apply every N years, e.g. +3% every 5 years.</div>
+          <div class="list-editor-wrap" id="rentalEditor"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Other income streams</div>
+          <div class="card-desc">Pensions, part-time work, annuities, alimony received, overseas income — anything else recurring.</div>
+          <div class="list-editor-wrap" id="otherIncomeEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: INVESTMENTS ===== -->
+      <div class="panel" id="panel-investments">
+        <div class="card">
+          <div class="card-title">Investments</div>
+          <div class="card-desc">Unit trusts, ETFs, stocks, robo portfolios, SRS investments, endowments held as investment-linked, etc. Dividends can either be reinvested (compounds into the value) or paid out to cash.</div>
+          <div class="list-editor-wrap" id="investmentsEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: POLICIES ===== -->
+      <div class="panel" id="panel-policies">
+        <div class="card">
+          <div class="card-title">Cash-value insurance policies</div>
+          <div class="card-desc">Whole life, endowment, participating policies. Value grows by your illustrated %, increases with premiums paid, and reduces when coupons or maturity proceeds are paid out. Leave maturity fields blank if the policy simply continues.</div>
+          <div class="list-editor-wrap" id="policiesEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: SHIELD PLAN ===== -->
+      <div class="panel" id="panel-shield">
+        <div class="card">
+          <div class="card-title">Integrated Shield Plan &amp; riders — premium by age</div>
+          <div class="card-desc">Enter the insurer's published premium table (cash and Medisave-payable portions) by age band. Update this whenever the insurer republishes rates — usually available as a PDF or table on the insurer's site. Medisave premiums are drawn from the client's MA first; any shortfall is added to cash expenses automatically.</div>
+          <div class="list-editor-wrap" id="shieldEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: EXPENSES ===== -->
+      <div class="panel" id="panel-expenses">
+        <div class="card">
+          <div class="card-title">General expenses (inflation-linked)</div>
+          <div class="card-desc">Everyday living costs that should grow with the general inflation rate you set on the Client tab.</div>
+          <div class="list-editor-wrap" id="generalExpEditor"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Fixed / non-inflating expenses</div>
+          <div class="card-desc">Life insurance premiums, home loan instalments (cash portion), personal loans, car loans, other insurance premiums, income tax — anything that doesn't generally track inflation and isn't already captured elsewhere.</div>
+          <div class="list-editor-wrap" id="fixedExpEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: CASH ===== -->
+      <div class="panel" id="panel-cash">
+        <div class="card">
+          <div class="card-title">Liquid cash</div>
+          <div class="grid">
+            <div class="field"><label>Starting total cash balance ($)</label><input type="number" step="100" id="f-cashStart"></div>
+            <div class="field"><label>Interest earned on cash (%/yr)</label><input type="number" step="0.1" id="f-cashInterest"><span class="hint">Blended rate across all accounts — see note below</span></div>
+            <div class="field"><label>Months of expenses held as emergency cash</label><input type="number" step="1" id="f-emergencyMonths"><span class="hint">Reserve = months × (total cash outflows that year ÷ 12). Excluded from risk-off allocation.</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">CPF LIFE</div>
+          <div class="card-desc">Enter the client's estimated monthly payout from the official CPF LIFE Estimator (cpf.gov.sg). This tool cannot calculate the actuarial payout itself.</div>
+          <div class="grid">
+            <div class="field"><label>Estimated monthly CPF LIFE payout ($)</label><input type="number" step="10" id="f-cpfLifePayout"></div>
+            <div class="field"><label>Payout starts at age</label><input type="number" min="65" max="70" id="f-cpfLifeStart"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Where cash actually sits (reference only — not part of the projection)</div>
+          <div class="card-desc">Use this to record exactly which bank and account holds the client's cash, for your own reference. This list does not feed into the cashflow projection above — the "Starting total cash balance" field does that.</div>
+          <div class="list-editor-wrap" id="cashDetailEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: DRAWDOWN SEQUENCE ===== -->
+      <div class="panel" id="panel-drawdown">
+        <div class="info-box">
+          If liquid cash would run short in a given year, the tool automatically draws down from the assets below, in the order you set (1 = first, 2 = second, and so on). Leave an asset's sequence blank to exclude it from automatic drawdown — it will simply keep growing untouched. <b>CPF OA is forcibly skipped as a drawdown source until the client is 55 or older and their Retirement Account has reached the Full Retirement Sum</b> — CPF rules only free up OA savings once that's met, regardless of what sequence number you give it here.
+        </div>
+        <div class="card">
+          <div class="card-title">Drawdown order</div>
+          <div class="card-desc">Applies to investments, cash-value policies (as a partial surrender), and CPF OA.</div>
+          <div class="list-editor-wrap" id="drawdownEditor"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: LEDGER ===== -->
+      <div class="panel" id="panel-ledger">
+        <div id="shortfallBanner"></div>
+        <div class="ledger-toolbar">
+          <div class="group-toggles">
+            <span style="font-weight:700; color:var(--ink);">Show columns:</span>
+            <label><input type="checkbox" data-grp="income" checked> Income</label>
+            <label><input type="checkbox" data-grp="expenses" checked> Expenses</label>
+            <label><input type="checkbox" data-grp="cashflow" checked> Cashflow</label>
+            <label><input type="checkbox" data-grp="cpf" checked> CPF</label>
+            <label><input type="checkbox" data-grp="investments" checked> Investments</label>
+            <label><input type="checkbox" data-grp="policies" checked> Policies</label>
+            <label><input type="checkbox" data-grp="allocation" checked> Allocation</label>
+          </div>
+          <button class="btn btn-sm" onclick="window.print()">Print / Save as PDF</button>
+        </div>
+        <div class="ledger-scroll">
+          <div class="ledger-wrap" id="ledgerWrap"></div>
+        </div>
+      </div>
+
+      <!-- ===== PANEL: CHARTS ===== -->
+      <div class="panel" id="panel-charts">
+        <div class="shortfall-banner" id="chartLibError" style="display:none;">Charts couldn't load — this tool fetches its charting library from the internet the first time this page opens. Check your connection and reload. Everything else in this tool (all inputs and the Ledger tab) works fully offline.</div>
+        <div class="stat-row" id="chartStats"></div>
+
+        <div class="card">
+          <div class="chart-title">Risk-on vs risk-off allocation over time</div>
+          <div class="chart-desc">Investments and policies tagged risk-on vs. everything considered risk-off (CPF, cash, and any policies/investments you've tagged risk-off).</div>
+          <canvas id="chartRiskOverTime"></canvas>
+        </div>
+
+        <div class="chart-grid">
+          <div class="card chart-card">
+            <div class="chart-title">Liquid cash over time</div>
+            <div class="chart-desc">Highlights the year(s) cash would run negative under these assumptions.</div>
+            <canvas id="chartLiquidCash"></canvas>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title">Net cashflow by year</div>
+            <div class="chart-desc">Total cash in minus total cash out, before touching savings.</div>
+            <canvas id="chartCashflow"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="chart-title">Total net worth composition</div>
+          <div class="chart-desc">Cash, CPF, investments and policies stacked over the full projection.</div>
+          <canvas id="chartNetWorth"></canvas>
+        </div>
+
+        <div class="card">
+          <div class="year-picker">
+            <label style="font-weight:700;">Snapshot year:</label>
+            <input type="range" id="yearSlider" min="0" max="0" value="0">
+            <span id="yearSliderLabel" class="mono"></span>
+          </div>
+          <div class="chart-grid">
+            <div class="chart-card">
+              <div class="chart-title">Risk allocation this year</div>
+              <canvas id="chartRiskDonut"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">Asset composition this year</div>
+              <canvas id="chartCompDonut"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   STATE
+   ========================================================================= */
+let idCounter = 1;
+function uid(){ return 'id' + (idCounter++); }
+
+function defaultState(){
+  return {
+    meta: { clientName:'', currentYear:2026, currentAge:35, endAge:99, residency:'SC' },
+    assumptions: { generalInflationPct:3.0, oaInterestPct:2.5, saMaRaInterestPct:4.0, frsTarget:220400, owCeilingMonthly:8000, awCeilingAnnual:102000, bhsAtStart:79000, bhsGrowthPct:5.0 },
+    income: {
+      grossBaseMonthly:6000, annualIncreasePct:3.0, bonusMonths:2, retirementYear:2056,
+      bridge:{ enabled:false, startYear:2050, endYear:2055, mode:'absolute', monthlyIncome:3000, decreasePct:30, annualIncreasePct:0 }
+    },
+    cpfStart:{ oa:0, sa:0, ra:0, ma:0 },
+    rental:[], otherIncome:[], investments:[], policies:[], shieldBands:[],
+    generalExpenses:[], fixedExpenses:[],
+    cash:{ startingBalance:0, interestPct:0.5, emergencyMonths:6 },
+    cpfLife:{ monthlyPayout:0, startAge:65 },
+    cashDetail:[],
+    drawdown:{ oaSequence:null }
+  };
+}
+let state = defaultState();
+
+/* =========================================================================
+   CPF ENGINE
+   ========================================================================= */
+const CPF_BANDS = [
+  { maxAge:35,  totalPct:37,   eePct:20,   erPct:17,   oa:23.0, sa:6.0,  ma:8.0  },
+  { maxAge:45,  totalPct:37,   eePct:20,   erPct:17,   oa:21.0, sa:7.0,  ma:9.0  },
+  { maxAge:50,  totalPct:37,   eePct:20,   erPct:17,   oa:19.0, sa:8.0,  ma:10.0 },
+  { maxAge:55,  totalPct:37,   eePct:20,   erPct:17,   oa:15.0, sa:11.5, ma:10.5 },
+  { maxAge:60,  totalPct:34,   eePct:18,   erPct:16,   oa:12.0, ra:11.5, ma:10.5 },
+  { maxAge:65,  totalPct:25,   eePct:12.5, erPct:12.5, oa:3.5,  ra:11.0, ma:10.5 },
+  { maxAge:70,  totalPct:16.5, eePct:7.5,  erPct:9,    oa:1.0,  ra:5.0,  ma:10.5 },
+  { maxAge:Infinity, totalPct:12.5, eePct:5, erPct:7.5, oa:1.0, ra:1.0, ma:10.5 },
+];
+function getCpfBand(age){ return CPF_BANDS.find(b => age <= b.maxAge); }
+
+function cpfForYear(age, grossMonthly, bonus, assumptions){
+  const band = getCpfBand(age);
+  const owSubject = Math.min(grossMonthly, assumptions.owCeilingMonthly) * 12;
+  const awCeiling = Math.max(assumptions.awCeilingAnnual - owSubject, 0);
+  const awSubject = Math.min(Math.max(bonus,0), awCeiling);
+  const wageSubject = owSubject + awSubject;
+  const employeeCPF = Math.round(wageSubject * band.eePct / 100);
+  const employerCPF = Math.round(wageSubject * band.erPct / 100);
+  const oaAmt = wageSubject * band.oa / 100;
+  const maAmt = wageSubject * band.ma / 100;
+  const toAccount = band.sa !== undefined ? 'sa' : 'ra';
+  const saOrRaAmt = wageSubject * (band.sa !== undefined ? band.sa : band.ra) / 100;
+  return { employeeCPF, employerCPF, oaAmt, maAmt, saOrRaAmt, toAccount };
+}
+
+function computeCpfInterest(oa, sa, ma, ra, age, assumptions){
+  const oaRate = assumptions.oaInterestPct/100;
+  const otherRate = assumptions.saMaRaInterestPct/100;
+  let oaInterest = oa*oaRate, saInterest = sa*otherRate, maInterest = ma*otherRate, raInterest = ra*otherRate;
+  const tiers = age >= 55 ? [{cap:30000,rate:0.02},{cap:30000,rate:0.01}] : [{cap:60000,rate:0.01}];
+  let oaRemaining = Math.min(oa, 20000);
+  let bucket2Remaining = age >= 55 ? ra : sa;
+  let maRemaining = ma;
+  for(const tier of tiers){
+    let capLeft = tier.cap;
+    const useOa = Math.min(oaRemaining, capLeft);
+    oaInterest += useOa*tier.rate; oaRemaining -= useOa; capLeft -= useOa;
+    const useB2 = Math.min(bucket2Remaining, capLeft);
+    if(age>=55) raInterest += useB2*tier.rate; else saInterest += useB2*tier.rate;
+    bucket2Remaining -= useB2; capLeft -= useB2;
+    const useMa = Math.min(maRemaining, capLeft);
+    maInterest += useMa*tier.rate; maRemaining -= useMa; capLeft -= useMa;
+  }
+  return { oaInterest, saInterest, maInterest, raInterest };
+}
+
+/* =========================================================================
+   LEDGER COMPUTATION
+   ========================================================================= */
+function getIncomePhase(year){
+  const inc = state.income;
+  if(inc.bridge.enabled){
+    if(year < inc.bridge.startYear) return 'career';
+    if(year <= inc.bridge.endYear) return 'bridge';
+    return 'retired';
+  }
+  return year < inc.retirementYear ? 'career' : 'retired';
+}
+function getGrossMonthly(year){
+  const inc = state.income;
+  const phase = getIncomePhase(year);
+  if(phase === 'career'){
+    const yrs = year - state.meta.currentYear;
+    return inc.grossBaseMonthly * Math.pow(1 + inc.annualIncreasePct/100, Math.max(yrs,0));
+  }
+  if(phase === 'bridge'){
+    const yrs = year - inc.bridge.startYear;
+    let baseAtBridgeStart;
+    if(inc.bridge.mode === 'percent'){
+      const yrsToStart = inc.bridge.startYear - state.meta.currentYear;
+      const projectedFullSalary = inc.grossBaseMonthly * Math.pow(1 + inc.annualIncreasePct/100, Math.max(yrsToStart,0));
+      baseAtBridgeStart = projectedFullSalary * (1 - (inc.bridge.decreasePct||0)/100);
+    } else {
+      baseAtBridgeStart = inc.bridge.monthlyIncome||0;
+    }
+    return baseAtBridgeStart * Math.pow(1 + (inc.bridge.annualIncreasePct||0)/100, Math.max(yrs,0));
+  }
+  return 0;
+}
+function sumRental(year){
+  let total = 0;
+  for(const r of state.rental){
+    if(year >= r.startYear && (!r.endYear || year <= r.endYear)){
+      const yrs = year - r.startYear;
+      const steps = r.stepEveryYears > 0 ? Math.floor(yrs / r.stepEveryYears) : 0;
+      total += (r.yearlyAmount||0) * Math.pow(1 + (r.stepPct||0)/100, steps);
+    }
+  }
+  return total;
+}
+function sumOtherIncome(year){
+  let total = 0;
+  for(const o of state.otherIncome){
+    if(year >= o.startYear && (!o.endYear || year <= o.endYear)){
+      const yrs = year - o.startYear;
+      total += (o.yearlyAmount||0) * Math.pow(1 + (o.growthPct||0)/100, Math.max(yrs,0));
+    }
+  }
+  return total;
+}
+function sumGeneralExpenses(year){
+  let total = 0;
+  for(const e of state.generalExpenses){
+    if(year >= e.startYear && (!e.endYear || year <= e.endYear)){
+      const yrs = year - e.startYear;
+      const annual = e.freq === 'monthly' ? (e.amount||0)*12 : (e.amount||0);
+      total += annual * Math.pow(1 + state.assumptions.generalInflationPct/100, Math.max(yrs,0));
+    }
+  }
+  return total;
+}
+function sumFixedExpenses(year){
+  let total = 0;
+  for(const e of state.fixedExpenses){
+    if(year >= e.startYear && (!e.endYear || year <= e.endYear)){
+      total += e.freq === 'monthly' ? (e.amount||0)*12 : (e.amount||0);
+    }
+  }
+  return total;
+}
+function getShieldPremium(age){
+  const band = state.shieldBands.find(b => age >= b.minAge && age <= b.maxAge);
+  return band ? { cash:(band.cashPremium||0), medisave:(band.medisavePremium||0) } : { cash:0, medisave:0 };
+}
+function getBasicHealthcareSum(year, age, lockedBhsRef){
+  const yrs = year - state.meta.currentYear;
+  const projected = (state.assumptions.bhsAtStart||79000) * Math.pow(1 + (state.assumptions.bhsGrowthPct||0)/100, Math.max(yrs,0));
+  if(age >= 65){
+    if(lockedBhsRef.value === null) lockedBhsRef.value = projected;
+    return lockedBhsRef.value;
+  }
+  return projected;
+}
+function capMedisave(ma, sa, ra, age, bhs){
+  if(ma > bhs){
+    const excess = ma - bhs;
+    ma = bhs;
+    if(age >= 55) ra += excess; else sa += excess;
+  }
+  return { ma, sa, ra };
+}
+
+function computeLedger(){
+  const rows = [];
+  let oa = state.cpfStart.oa||0, sa = state.cpfStart.sa||0, ma = state.cpfStart.ma||0, ra = state.cpfStart.ra||0;
+  let cash = state.cash.startingBalance||0;
+  let raTransferred = state.meta.currentAge >= 55;
+  let oaDrawdownUnlocked = false;
+  const lockedBhsRef = { value: null };
+  const investState = {}; state.investments.forEach(inv => investState[inv.id] = { value: inv.initialCapital||0 });
+  const policyState = {}; state.policies.forEach(p => policyState[p.id] = { value:0, ended:false });
+
+  for(let age = state.meta.currentAge, year = state.meta.currentYear; age <= state.meta.endAge; age++, year++){
+    const openingCash = cash;
+    const phase = getIncomePhase(year);
+    const grossMonthly = getGrossMonthly(year);
+    const bonus = phase === 'retired' ? 0 : grossMonthly * (state.income.bonusMonths||0);
+    const grossYearly = grossMonthly*12 + bonus;
+
+    let employeeCPF=0, employerCPF=0;
+    if(state.meta.residency !== 'EP' && phase !== 'retired'){
+      const c = cpfForYear(age, grossMonthly, bonus, state.assumptions);
+      employeeCPF = c.employeeCPF; employerCPF = c.employerCPF;
+      oa += c.oaAmt; ma += c.maAmt;
+      if(c.toAccount === 'sa') sa += c.saOrRaAmt; else ra += c.saOrRaAmt;
+    }
+    const nettYearly = grossYearly - employeeCPF;
+
+    // Medisave is capped at the Basic Healthcare Sum; any excess flows to SA (below 55) or RA (55+)
+    const bhs = getBasicHealthcareSum(year, age, lockedBhsRef);
+    ({ma, sa, ra} = capMedisave(ma, sa, ra, age, bhs));
+
+    if(age === 55 && !raTransferred){
+      const transferSa = sa;
+      const need = Math.max(state.assumptions.frsTarget - transferSa, 0);
+      const transferOa = Math.min(oa, need);
+      ra += transferSa + transferOa;
+      oa -= transferOa;
+      sa = 0;
+      raTransferred = true;
+    }
+
+    const interest = computeCpfInterest(oa, sa, ma, ra, age, state.assumptions);
+    oa += interest.oaInterest; sa += interest.saInterest; ma += interest.maInterest; ra += interest.raInterest;
+
+    // Re-cap Medisave after interest crediting
+    ({ma, sa, ra} = capMedisave(ma, sa, ra, age, bhs));
+
+    // CPF OA becomes eligible for drawdown once the client is 55+ and RA has reached the Full Retirement Sum
+    if(age >= 55 && ra >= state.assumptions.frsTarget) oaDrawdownUnlocked = true;
+
+    // Investments — grow, pay/reinvest dividends, take contributions (values held on investState; totals finalised after drawdown)
+    let investDividendCash=0, investContribution=0;
+    for(const inv of state.investments){
+      const st = investState[inv.id];
+      if(year < inv.startYear) continue;
+      const priorValue = st.value;
+      let value = priorValue * (1 + (inv.growthPct||0)/100);
+      const dividend = priorValue * (inv.dividendPct||0)/100;
+      if(inv.dividendPayout) investDividendCash += dividend; else value += dividend;
+      const contribActive = year <= (inv.contribEndYear || 9999);
+      if(contribActive && inv.contribAmount){
+        const c = inv.contribFreq === 'monthly' ? inv.contribAmount*12 : inv.contribAmount;
+        value += c; investContribution += c;
+      }
+      st.value = Math.max(value,0);
+    }
+
+    // Policies — grow, take premiums, pay coupons/maturity
+    let policyPremium=0, policyCouponCash=0, policyMaturityCash=0;
+    for(const p of state.policies){
+      const st = policyState[p.id];
+      if(st.ended || year < p.startYear) continue;
+      let value = st.value * (1 + (p.growthPct||0)/100);
+      const premiumActive = year <= (p.premiumEndYear || 9999);
+      if(premiumActive && p.premiumAmount){
+        let prem = 0;
+        if(p.premiumFreq === 'monthly') prem = p.premiumAmount*12;
+        else if(p.premiumFreq === 'yearly') prem = p.premiumAmount;
+        else if(p.premiumFreq === 'single') prem = (year === p.startYear) ? p.premiumAmount : 0;
+        value += prem; policyPremium += prem;
+      }
+      if(p.couponAmount && p.couponStartYear && year >= p.couponStartYear && year <= (p.couponEndYear||9999)){
+        const yrs = year - p.couponStartYear;
+        const couponAmt = p.couponType === 'incremental' ? p.couponAmount * Math.pow(1+(p.couponIncrementPct||0)/100, Math.max(yrs,0)) : p.couponAmount;
+        value -= couponAmt; policyCouponCash += couponAmt;
+      }
+      if(p.maturityYear && year === p.maturityYear){
+        const payout = p.maturityValue ? p.maturityValue : value;
+        policyMaturityCash += payout; value = 0; st.ended = true;
+      }
+      st.value = Math.max(value,0);
+    }
+
+    // Shield plan
+    const shield = getShieldPremium(age);
+    const medisavePay = Math.min(ma, shield.medisave);
+    ma -= medisavePay;
+    const medisaveShortfall = shield.medisave - medisavePay;
+    const shieldCash = shield.cash + medisaveShortfall;
+
+    const rentalIncome = sumRental(year);
+    const otherIncomeAmt = sumOtherIncome(year);
+    const generalExp = sumGeneralExpenses(year);
+    const fixedExp = sumFixedExpenses(year);
+    const cpfLifePayout = (age >= state.cpfLife.startAge) ? (state.cpfLife.monthlyPayout||0)*12 : 0;
+
+    const totalCashIncome = nettYearly + rentalIncome + otherIncomeAmt + investDividendCash + policyCouponCash + policyMaturityCash + cpfLifePayout;
+    const totalCashExpenses = generalExp + fixedExp + shieldCash + investContribution + policyPremium;
+    const cashflow = totalCashIncome - totalCashExpenses;
+    cash = openingCash * (1 + (state.cash.interestPct||0)/100) + cashflow;
+
+    // Drawdown: if liquid cash has run short, pull from sequenced assets to cover it.
+    // CPF OA is forcibly skipped unless the client is 55+ and RA has met the Full Retirement Sum.
+    let drawdownTotal = 0;
+    const drawdownDetail = [];
+    if(cash < 0){
+      let shortfall = -cash;
+      const candidates = [];
+      if(state.drawdown.oaSequence) candidates.push({ type:'oa', seq:state.drawdown.oaSequence, label:'CPF OA' });
+      state.investments.forEach(inv => { if(inv.drawdownSequence) candidates.push({ type:'investment', id:inv.id, seq:inv.drawdownSequence, label:inv.name||'Investment' }); });
+      state.policies.forEach(p => { if(p.drawdownSequence) candidates.push({ type:'policy', id:p.id, seq:p.drawdownSequence, label:p.name||'Policy' }); });
+      candidates.sort((a,b) => a.seq - b.seq);
+      for(const c of candidates){
+        if(shortfall <= 0.5) break;
+        let available = 0;
+        if(c.type === 'oa'){
+          if(age < 55 || !oaDrawdownUnlocked) continue;
+          available = oa;
+        } else if(c.type === 'investment'){
+          available = investState[c.id].value;
+        } else if(c.type === 'policy'){
+          available = policyState[c.id].value;
+        }
+        const draw = Math.min(available, shortfall);
+        if(draw <= 0) continue;
+        if(c.type === 'oa') oa -= draw;
+        else if(c.type === 'investment') investState[c.id].value -= draw;
+        else if(c.type === 'policy') policyState[c.id].value -= draw;
+        cash += draw; shortfall -= draw; drawdownTotal += draw;
+        drawdownDetail.push({ label:c.label, amount:draw });
+      }
+    }
+
+    // Finalise investment / policy totals (post-drawdown)
+    let investTotal=0, investRiskOn=0, investRiskOff=0;
+    const investDetails = state.investments.map(inv => {
+      const v = year < inv.startYear ? 0 : investState[inv.id].value;
+      investTotal += v;
+      if(inv.riskBucket === 'risk-on') investRiskOn += v; else investRiskOff += v;
+      return { id:inv.id, name:inv.name, value:v };
+    });
+    let policyTotal=0, policyRiskOn=0, policyRiskOff=0;
+    const policyDetails = state.policies.map(p => {
+      const v = policyState[p.id].value||0;
+      policyTotal += v;
+      if(p.riskBucket === 'risk-on') policyRiskOn += v; else policyRiskOff += v;
+      return { id:p.id, name:p.name, value:v };
+    });
+
+    const saOrRa = age >= 55 ? ra : sa;
+    const saOrRaLabel = age >= 55 ? 'RA' : 'SA';
+    const cpfTotal = oa + saOrRa + ma;
+
+    // Risk allocation: cash above the emergency reserve, CPF OA and SA/RA count as risk-off.
+    // Medisave and the emergency reserve itself are excluded — they aren't allocatable assets.
+    const emergencyReserveTarget = (state.cash.emergencyMonths||0) * (totalCashExpenses/12);
+    const cashAboveReserve = Math.max(cash - emergencyReserveTarget, 0);
+    const riskOn = investRiskOn + policyRiskOn;
+    const riskOff = cashAboveReserve + oa + saOrRa + investRiskOff + policyRiskOff;
+    const netWorth = cash + oa + saOrRa + ma + investTotal + policyTotal;
+
+    rows.push({
+      age, year, phase,
+      grossMonthly, grossYearly, employeeCPF, employerCPF, nettYearly,
+      rentalIncome, otherIncomeAmt, investDividendCash, policyCouponCash, policyMaturityCash, cpfLifePayout,
+      totalCashIncome, generalExp, fixedExp, shieldCash, investContribution, policyPremium, totalCashExpenses,
+      cashflow, openingCash, drawdownTotal, drawdownDetail, cash,
+      emergencyReserveTarget, cashAboveReserve,
+      oa, saOrRa, saOrRaLabel, ma, ra, cpfTotal, bhs, oaDrawdownUnlocked,
+      investDetails, investTotal, policyDetails, policyTotal,
+      riskOn, riskOff, netWorth,
+      shortfall: cash < 0
+    });
+  }
+  return rows;
+}
+
+/* =========================================================================
+   FORMATTING HELPERS
+   ========================================================================= */
+function fmt(n){
+  if(n===undefined||n===null||isNaN(n)) return '—';
+  const neg = n < -0.5;
+  const v = Math.round(Math.abs(n)).toLocaleString('en-SG');
+  return neg ? '(' + v + ')' : v;
+}
+function fmt2(n){ return (n||0).toLocaleString('en-SG', {maximumFractionDigits:0}); }
+
+/* =========================================================================
+   NAVIGATION
+   ========================================================================= */
+const TABS = [
+  {id:'client', label:'Client & assumptions'},
+  {id:'income', label:'Income & CPF'},
+  {id:'investments', label:'Investments'},
+  {id:'policies', label:'Insurance policies'},
+  {id:'shield', label:'Shield plan premiums'},
+  {id:'expenses', label:'Expenses'},
+  {id:'cash', label:'Cash & CPF LIFE'},
+  {id:'drawdown', label:'Drawdown sequence'},
+  {id:'ledger', label:'Ledger'},
+  {id:'charts', label:'Charts'},
+];
+function buildNav(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = '';
+  TABS.forEach((t,i) => {
+    const btn = document.createElement('button');
+    btn.innerHTML = '<span class="num">' + String(i+1).padStart(2,'0') + '</span><span>' + t.label + '</span>';
+    btn.dataset.tab = t.id;
+    btn.onclick = () => showTab(t.id);
+    nav.appendChild(btn);
+  });
+}
+function showTab(id){
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.tab===id));
+  if(id === 'drawdown') renderDrawdownTab();
+  if(id === 'ledger') renderLedger();
+  if(id === 'charts') renderCharts();
+}
+
+/* =========================================================================
+   GENERIC LIST EDITOR
+   ========================================================================= */
+function renderListEditor(containerId, listRef, schema, opts){
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  if(listRef.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'empty-row';
+    empty.textContent = opts.emptyText || 'No entries yet.';
+    container.appendChild(empty);
+  } else {
+    const table = document.createElement('table');
+    table.className = 'list-editor';
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    schema.forEach(f => { const th = document.createElement('th'); th.textContent = f.label; headRow.appendChild(th); });
+    headRow.appendChild(document.createElement('th'));
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    listRef.forEach((item, idx) => {
+      const tr = document.createElement('tr');
+      schema.forEach(f => {
+        const td = document.createElement('td');
+        let input;
+        if(f.type === 'select'){
+          input = document.createElement('select');
+          f.options.forEach(o => {
+            const opt = document.createElement('option');
+            opt.value = o.value; opt.textContent = o.label;
+            if(item[f.key] === o.value) opt.selected = true;
+            input.appendChild(opt);
+          });
+        } else if(f.type === 'checkbox'){
+          input = document.createElement('input'); input.type = 'checkbox'; input.checked = !!item[f.key];
+        } else {
+          input = document.createElement('input');
+          input.type = f.type === 'number' ? 'number' : 'text';
+          if(f.type === 'number') input.step = f.step || 'any';
+          input.value = item[f.key] === undefined || item[f.key] === null ? '' : item[f.key];
+          if(f.placeholder) input.placeholder = f.placeholder;
+        }
+        input.addEventListener('input', () => {
+          if(f.type === 'checkbox') item[f.key] = input.checked;
+          else if(f.type === 'number') item[f.key] = input.value === '' ? null : parseFloat(input.value);
+          else item[f.key] = input.value;
+          onDataChanged();
+        });
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+      const delTd = document.createElement('td');
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-icon-del'; delBtn.innerHTML = '&#10005;'; delBtn.title = 'Remove row';
+      delBtn.onclick = () => { listRef.splice(idx,1); renderListEditor(containerId, listRef, schema, opts); onDataChanged(); };
+      delTd.appendChild(delBtn);
+      tr.appendChild(delTd);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-add';
+  addBtn.textContent = opts.addLabel || '+ Add row';
+  addBtn.onclick = () => { listRef.push(opts.newItem()); renderListEditor(containerId, listRef, schema, opts); onDataChanged(); };
+  container.appendChild(addBtn);
+}
+
+/* ---- Schemas ---- */
+const rentalSchema = [
+  {key:'name', label:'Property / label', type:'text', placeholder:'e.g. Tampines condo'},
+  {key:'yearlyAmount', label:'Yearly rent ($)', type:'number', step:100},
+  {key:'startYear', label:'Start year', type:'number'},
+  {key:'endYear', label:'End year (blank = ongoing)', type:'number'},
+  {key:'stepEveryYears', label:'Step every N yrs', type:'number'},
+  {key:'stepPct', label:'Step size (%)', type:'number', step:0.1},
+];
+const otherIncomeSchema = [
+  {key:'name', label:'Description', type:'text', placeholder:'e.g. Pension, part-time work'},
+  {key:'yearlyAmount', label:'Yearly amount ($)', type:'number', step:100},
+  {key:'startYear', label:'Start year', type:'number'},
+  {key:'endYear', label:'End year (blank = ongoing)', type:'number'},
+  {key:'growthPct', label:'Annual growth (%)', type:'number', step:0.1},
+];
+const investmentSchema = [
+  {key:'name', label:'Investment', type:'text', placeholder:'e.g. Endowus Flagship'},
+  {key:'startYear', label:'Start year', type:'number'},
+  {key:'initialCapital', label:'Initial capital ($)', type:'number', step:100},
+  {key:'contribAmount', label:'Regular contribution ($)', type:'number', step:50},
+  {key:'contribFreq', label:'Frequency', type:'select', options:[{value:'monthly',label:'Monthly'},{value:'yearly',label:'Yearly'}]},
+  {key:'contribEndYear', label:'Contribution ends (year)', type:'number'},
+  {key:'growthPct', label:'Yearly growth (%)', type:'number', step:0.1},
+  {key:'dividendPct', label:'Yearly dividend (%)', type:'number', step:0.1},
+  {key:'dividendPayout', label:'Pay dividend to cash?', type:'checkbox'},
+  {key:'riskBucket', label:'Risk bucket', type:'select', options:[{value:'risk-on',label:'Risk-on'},{value:'risk-off',label:'Risk-off'}]},
+];
+const policySchema = [
+  {key:'name', label:'Policy', type:'text', placeholder:'e.g. Whole life plan'},
+  {key:'startYear', label:'Start year', type:'number'},
+  {key:'premiumAmount', label:'Premium amount ($)', type:'number', step:50},
+  {key:'premiumFreq', label:'Premium frequency', type:'select', options:[{value:'monthly',label:'Monthly'},{value:'yearly',label:'Yearly'},{value:'single',label:'Single premium'}]},
+  {key:'premiumEndYear', label:'Premiums end (year)', type:'number'},
+  {key:'growthPct', label:'Illustrated growth (%)', type:'number', step:0.1},
+  {key:'maturityYear', label:'Maturity year', type:'number'},
+  {key:'maturityValue', label:'Maturity payout ($, blank = projected value)', type:'number', step:100},
+  {key:'couponStartYear', label:'Coupon starts (year)', type:'number'},
+  {key:'couponEndYear', label:'Coupon ends (year)', type:'number'},
+  {key:'couponAmount', label:'Coupon amount ($/yr)', type:'number', step:50},
+  {key:'couponType', label:'Coupon type', type:'select', options:[{value:'level',label:'Level'},{value:'incremental',label:'Incremental'}]},
+  {key:'couponIncrementPct', label:'Coupon increment (%/yr)', type:'number', step:0.1},
+  {key:'riskBucket', label:'Risk bucket', type:'select', options:[{value:'risk-off',label:'Risk-off'},{value:'risk-on',label:'Risk-on'}]},
+];
+const shieldSchema = [
+  {key:'minAge', label:'Age from', type:'number'},
+  {key:'maxAge', label:'Age to', type:'number'},
+  {key:'cashPremium', label:'Annual cash premium ($)', type:'number', step:10},
+  {key:'medisavePremium', label:'Annual Medisave premium ($)', type:'number', step:10},
+];
+const generalExpSchema = [
+  {key:'name', label:'Expense', type:'text', placeholder:'e.g. Household & groceries'},
+  {key:'amount', label:'Amount ($)', type:'number', step:10},
+  {key:'freq', label:'Frequency', type:'select', options:[{value:'monthly',label:'Monthly'},{value:'yearly',label:'Yearly'}]},
+  {key:'startYear', label:'Start year', type:'number'},
+  {key:'endYear', label:'End year (blank = ongoing)', type:'number'},
+];
+const fixedExpSchema = [
+  {key:'name', label:'Expense', type:'text', placeholder:'e.g. Home loan instalment'},
+  {key:'amount', label:'Amount ($)', type:'number', step:10},
+  {key:'freq', label:'Frequency', type:'select', options:[{value:'monthly',label:'Monthly'},{value:'yearly',label:'Yearly'}]},
+  {key:'startYear', label:'Start year', type:'number'},
+  {key:'endYear', label:'End year (blank = ongoing)', type:'number'},
+];
+const cashDetailSchema = [
+  {key:'bank', label:'Bank', type:'text', placeholder:'e.g. DBS'},
+  {key:'account', label:'Account', type:'text', placeholder:'e.g. Multiplier'},
+  {key:'balance', label:'Balance ($)', type:'number', step:100},
+  {key:'interestPct', label:'Interest rate (%/yr)', type:'number', step:0.01},
+];
+
+function renderAllListEditors(){
+  renderListEditor('rentalEditor', state.rental, rentalSchema, {addLabel:'+ Add rental property', emptyText:'No rental income added.', newItem:()=>({id:uid(),name:'',yearlyAmount:0,startYear:state.meta.currentYear,endYear:null,stepEveryYears:5,stepPct:3})});
+  renderListEditor('otherIncomeEditor', state.otherIncome, otherIncomeSchema, {addLabel:'+ Add income stream', emptyText:'No other income streams added.', newItem:()=>({id:uid(),name:'',yearlyAmount:0,startYear:state.meta.currentYear,endYear:null,growthPct:0})});
+  renderListEditor('investmentsEditor', state.investments, investmentSchema, {addLabel:'+ Add investment', emptyText:'No investments added.', newItem:()=>({id:uid(),name:'',startYear:state.meta.currentYear,initialCapital:0,contribAmount:0,contribFreq:'monthly',contribEndYear:null,growthPct:5,dividendPct:0,dividendPayout:false,riskBucket:'risk-on',drawdownSequence:null})});
+  renderListEditor('policiesEditor', state.policies, policySchema, {addLabel:'+ Add policy', emptyText:'No insurance policies added.', newItem:()=>({id:uid(),name:'',startYear:state.meta.currentYear,premiumAmount:0,premiumFreq:'yearly',premiumEndYear:null,growthPct:3,maturityYear:null,maturityValue:null,couponStartYear:null,couponEndYear:null,couponAmount:0,couponType:'level',couponIncrementPct:0,riskBucket:'risk-off',drawdownSequence:null})});
+  renderListEditor('shieldEditor', state.shieldBands, shieldSchema, {addLabel:'+ Add age band', emptyText:'No premium table entered yet.', newItem:()=>({id:uid(),minAge:0,maxAge:99,cashPremium:0,medisavePremium:0})});
+  renderListEditor('generalExpEditor', state.generalExpenses, generalExpSchema, {addLabel:'+ Add expense', emptyText:'No general expenses added.', newItem:()=>({id:uid(),name:'',amount:0,freq:'monthly',startYear:state.meta.currentYear,endYear:null})});
+  renderListEditor('fixedExpEditor', state.fixedExpenses, fixedExpSchema, {addLabel:'+ Add fixed expense', emptyText:'No fixed expenses added.', newItem:()=>({id:uid(),name:'',amount:0,freq:'yearly',startYear:state.meta.currentYear,endYear:null})});
+  renderListEditor('cashDetailEditor', state.cashDetail, cashDetailSchema, {addLabel:'+ Add account', emptyText:'No accounts recorded.', newItem:()=>({id:uid(),bank:'',account:'',balance:0,interestPct:0})});
+}
+
+function renderDrawdownTab(){
+  const container = document.getElementById('drawdownEditor');
+  container.innerHTML = '';
+  const items = [];
+  items.push({ label:'CPF Ordinary Account (OA)', type:'CPF', getSeq:()=>state.drawdown.oaSequence, setSeq:v=>state.drawdown.oaSequence=v, note:'Skipped until age 55+ and RA ≥ Full Retirement Sum' });
+  state.investments.forEach(inv => items.push({ label: inv.name || 'Untitled investment', type:'Investment', getSeq:()=>inv.drawdownSequence, setSeq:v=>inv.drawdownSequence=v, note:'' }));
+  state.policies.forEach(p => items.push({ label: p.name || 'Untitled policy', type:'Policy', getSeq:()=>p.drawdownSequence, setSeq:v=>p.drawdownSequence=v, note:'Treated as a partial surrender' }));
+
+  if(items.length === 1){
+    const empty = document.createElement('div');
+    empty.className = 'empty-row';
+    empty.textContent = 'Add investments or policies on their own tabs to include them here.';
+    container.appendChild(empty);
+  }
+
+  const table = document.createElement('table');
+  table.className = 'list-editor';
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>Asset</th><th>Type</th><th>Sequence (1 = first; blank = never auto-drawn)</th><th>Note</th></tr>';
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  items.forEach(item => {
+    const tr = document.createElement('tr');
+    const tdName = document.createElement('td'); tdName.textContent = item.label; tdName.style.fontWeight = '600';
+    const tdType = document.createElement('td'); tdType.textContent = item.type;
+    const tdSeq = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'number'; input.min = '1'; input.step = '1';
+    const cur = item.getSeq();
+    input.value = (cur === null || cur === undefined) ? '' : cur;
+    input.addEventListener('input', () => { item.setSeq(input.value === '' ? null : parseInt(input.value)); onDataChanged(); });
+    tdSeq.appendChild(input);
+    const tdNote = document.createElement('td'); tdNote.textContent = item.note; tdNote.style.color = 'var(--ink-muted)'; tdNote.style.fontSize = '11.5px';
+    tr.appendChild(tdName); tr.appendChild(tdType); tr.appendChild(tdSeq); tr.appendChild(tdNote);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+/* =========================================================================
+   BINDING: simple fields
+   ========================================================================= */
+const BINDINGS = [
+  ['f-clientName', ['meta','clientName'], 'text'],
+  ['f-currentAge', ['meta','currentAge'], 'number'],
+  ['f-currentYear', ['meta','currentYear'], 'number'],
+  ['f-endAge', ['meta','endAge'], 'number'],
+  ['f-residency', ['meta','residency'], 'text'],
+  ['f-inflation', ['assumptions','generalInflationPct'], 'number'],
+  ['f-oaRate', ['assumptions','oaInterestPct'], 'number'],
+  ['f-samaRate', ['assumptions','saMaRaInterestPct'], 'number'],
+  ['f-frs', ['assumptions','frsTarget'], 'number'],
+  ['f-bhs', ['assumptions','bhsAtStart'], 'number'],
+  ['f-bhsGrowth', ['assumptions','bhsGrowthPct'], 'number'],
+  ['f-owCeiling', ['assumptions','owCeilingMonthly'], 'number'],
+  ['f-awCeiling', ['assumptions','awCeilingAnnual'], 'number'],
+  ['f-grossMonthly', ['income','grossBaseMonthly'], 'number'],
+  ['f-incomeGrowth', ['income','annualIncreasePct'], 'number'],
+  ['f-bonusMonths', ['income','bonusMonths'], 'number'],
+  ['f-retirementYear', ['income','retirementYear'], 'number'],
+  ['f-bridgeEnabled', ['income','bridge','enabled'], 'checkbox'],
+  ['f-bridgeStart', ['income','bridge','startYear'], 'number'],
+  ['f-bridgeEnd', ['income','bridge','endYear'], 'number'],
+  ['f-bridgeMode', ['income','bridge','mode'], 'text'],
+  ['f-bridgeIncome', ['income','bridge','monthlyIncome'], 'number'],
+  ['f-bridgeDecreasePct', ['income','bridge','decreasePct'], 'number'],
+  ['f-bridgeGrowth', ['income','bridge','annualIncreasePct'], 'number'],
+  ['f-cpfOA', ['cpfStart','oa'], 'number'],
+  ['f-cpfSA', ['cpfStart','sa'], 'number'],
+  ['f-cpfRA', ['cpfStart','ra'], 'number'],
+  ['f-cpfMA', ['cpfStart','ma'], 'number'],
+  ['f-cashStart', ['cash','startingBalance'], 'number'],
+  ['f-cashInterest', ['cash','interestPct'], 'number'],
+  ['f-emergencyMonths', ['cash','emergencyMonths'], 'number'],
+  ['f-cpfLifePayout', ['cpfLife','monthlyPayout'], 'number'],
+  ['f-cpfLifeStart', ['cpfLife','startAge'], 'number'],
+];
+function getPath(obj, path){ return path.reduce((o,k)=>o && o[k], obj); }
+function setPath(obj, path, value){ let o = obj; for(let i=0;i<path.length-1;i++) o = o[path[i]]; o[path[path.length-1]] = value; }
+
+function populateFields(){
+  BINDINGS.forEach(([elId, path, type]) => {
+    const el = document.getElementById(elId);
+    if(!el) return;
+    const val = getPath(state, path);
+    if(type === 'checkbox') el.checked = !!val;
+    else el.value = (val === null || val === undefined) ? '' : val;
+  });
+  document.getElementById('bridgePanel').style.display = state.income.bridge.enabled ? 'block' : 'none';
+  document.getElementById('bridgeAbsoluteFields').style.display = state.income.bridge.mode === 'percent' ? 'none' : 'grid';
+  document.getElementById('bridgePercentFields').style.display = state.income.bridge.mode === 'percent' ? 'grid' : 'none';
+}
+function bindFields(){
+  BINDINGS.forEach(([elId, path, type]) => {
+    const el = document.getElementById(elId);
+    if(!el) return;
+    el.addEventListener('input', () => {
+      let v;
+      if(type === 'checkbox') v = el.checked;
+      else if(type === 'number') v = el.value === '' ? null : parseFloat(el.value);
+      else v = el.value;
+      setPath(state, path, v);
+      if(elId === 'f-bridgeEnabled') document.getElementById('bridgePanel').style.display = v ? 'block' : 'none';
+      if(elId === 'f-bridgeMode'){
+        document.getElementById('bridgeAbsoluteFields').style.display = v === 'percent' ? 'none' : 'grid';
+        document.getElementById('bridgePercentFields').style.display = v === 'percent' ? 'grid' : 'none';
+      }
+      onDataChanged();
+    });
+  });
+}
+
+/* =========================================================================
+   TOP BAR + CHANGE HANDLER
+   ========================================================================= */
+function updateTopbar(){
+  document.getElementById('topClientName').textContent = state.meta.clientName || 'Untitled client';
+  const resLabel = {SC:'Singapore Citizen', PR:'Permanent Resident', EP:'Employment Pass'}[state.meta.residency] || '';
+  document.getElementById('topClientSub').textContent = 'Age ' + state.meta.currentAge + ' in ' + state.meta.currentYear + ' · ' + resLabel + ' · projecting to age ' + state.meta.endAge;
+}
+let recalcTimer = null;
+function onDataChanged(){
+  updateTopbar();
+  clearTimeout(recalcTimer);
+  recalcTimer = setTimeout(() => {
+    const activeTab = document.querySelector('.panel.active').id.replace('panel-','');
+    if(activeTab === 'ledger') renderLedger();
+    if(activeTab === 'charts') renderCharts();
+  }, 150);
+}
+
+/* =========================================================================
+   LEDGER RENDERING
+   ========================================================================= */
+function renderLedger(){
+  const rows = computeLedger();
+  const wrap = document.getElementById('ledgerWrap');
+
+  const firstShortfall = rows.find(r => r.shortfall);
+  const banner = document.getElementById('shortfallBanner');
+  banner.innerHTML = firstShortfall
+    ? '<div class="shortfall-banner">⚠ On current assumptions, liquid cash first goes negative in ' + firstShortfall.year + ' (age ' + firstShortfall.age + ').</div>'
+    : '';
+
+  const invCols = state.investments.map(i => ({ id:i.id, label: i.name || 'Investment' }));
+  const polCols = state.policies.map(p => ({ id:p.id, label: p.name || 'Policy' }));
+
+  let html = '<table class="ledger">';
+  html += '<thead>';
+  html += '<tr class="group-row">';
+  html += '<th class="col-age" rowspan="2">Age</th><th class="col-year" rowspan="2">Year</th>';
+  html += '<th data-group="income" colspan="11">Income</th>';
+  html += '<th data-group="expenses" colspan="6">Expenses</th>';
+  html += '<th data-group="cashflow" colspan="5">Cashflow</th>';
+  html += '<th data-group="cpf" colspan="5">CPF</th>';
+  html += '<th data-group="investments" colspan="' + (invCols.length+1) + '">Investments</th>';
+  html += '<th data-group="policies" colspan="' + (polCols.length+1) + '">Policies</th>';
+  html += '<th data-group="allocation" colspan="3">Allocation</th>';
+  html += '</tr>';
+  html += '<tr class="col-row">';
+  html += '<th data-group="income">Gross/mo</th><th data-group="income">Gross/yr</th><th data-group="income">Employee CPF</th><th data-group="income">Nett/yr</th><th data-group="income">Rental</th><th data-group="income">Other inc.</th><th data-group="income">Inv. dividends</th><th data-group="income">Policy coupons</th><th data-group="income">Policy maturity</th><th data-group="income">CPF LIFE</th><th data-group="income">Total cash in</th>';
+  html += '<th data-group="expenses">General (infl.)</th><th data-group="expenses">Fixed</th><th data-group="expenses">Shield (cash)</th><th data-group="expenses">Inv. contrib.</th><th data-group="expenses">Policy premiums</th><th data-group="expenses">Total cash out</th>';
+  html += '<th data-group="cashflow">Opening cash</th><th data-group="cashflow">Net cashflow</th><th data-group="cashflow">Drawn from assets</th><th data-group="cashflow">Closing cash</th><th data-group="cashflow">Emergency reserve target</th>';
+  html += '<th data-group="cpf">Employer CPF</th><th data-group="cpf">OA</th><th data-group="cpf">SA/RA</th><th data-group="cpf">MA</th><th data-group="cpf">CPF total</th>';
+  invCols.forEach(c => html += '<th data-group="investments">' + c.label + '</th>');
+  html += '<th data-group="investments">Investments total</th>';
+  polCols.forEach(c => html += '<th data-group="policies">' + c.label + '</th>');
+  html += '<th data-group="policies">Policies total</th>';
+  html += '<th data-group="allocation">Risk-on</th><th data-group="allocation">Risk-off</th><th data-group="allocation">Net worth</th>';
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(r => {
+    const rowClass = (r.shortfall ? 'shortfall-row' : (r.phase==='retired' ? 'retired-row' : ''));
+    html += '<tr class="' + rowClass + '">';
+    html += '<td class="col-age mono">' + r.age + '</td><td class="col-year mono">' + r.year + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.grossMonthly) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.grossYearly) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.employeeCPF) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.nettYearly) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.rentalIncome) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.otherIncomeAmt) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.investDividendCash) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.policyCouponCash) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.policyMaturityCash) + '</td>';
+    html += '<td class="mono" data-group="income">' + fmt(r.cpfLifePayout) + '</td>';
+    html += '<td class="mono pos-strong" data-group="income">' + fmt(r.totalCashIncome) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.generalExp) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.fixedExp) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.shieldCash) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.investContribution) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.policyPremium) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.totalCashExpenses) + '</td>';
+    const drawdownTitle = r.drawdownDetail.length ? r.drawdownDetail.map(d => d.label + ': S$' + fmt(d.amount)).join(' · ') : '';
+    html += '<td class="mono" data-group="cashflow">' + fmt(r.openingCash) + '</td>';
+    html += '<td class="mono ' + (r.cashflow<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cashflow) + '</td>';
+    html += '<td class="mono" data-group="cashflow" title="' + drawdownTitle + '">' + fmt(r.drawdownTotal) + '</td>';
+    html += '<td class="mono ' + (r.cash<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cash) + '</td>';
+    html += '<td class="mono" data-group="cashflow">' + fmt(r.emergencyReserveTarget) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.employerCPF) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.oa) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.saOrRa) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.ma) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.cpfTotal) + '</td>';
+    r.investDetails.forEach(d => html += '<td class="mono" data-group="investments">' + fmt(d.value) + '</td>');
+    html += '<td class="mono" data-group="investments">' + fmt(r.investTotal) + '</td>';
+    r.policyDetails.forEach(d => html += '<td class="mono" data-group="policies">' + fmt(d.value) + '</td>');
+    html += '<td class="mono" data-group="policies">' + fmt(r.policyTotal) + '</td>';
+    html += '<td class="mono" data-group="allocation">' + fmt(r.riskOn) + '</td>';
+    html += '<td class="mono" data-group="allocation">' + fmt(r.riskOff) + '</td>';
+    html += '<td class="mono pos-strong" data-group="allocation">' + fmt(r.netWorth) + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  applyGroupToggles();
+  window._lastLedger = rows;
+}
+function applyGroupToggles(){
+  const wrap = document.getElementById('ledgerWrap');
+  document.querySelectorAll('.group-toggles input[type=checkbox]').forEach(cb => {
+    const grp = cb.dataset.grp;
+    wrap.classList.toggle('hide-'+grp, !cb.checked);
+  });
+}
+document.addEventListener('change', e => {
+  if(e.target.matches('.group-toggles input[type=checkbox]')){ applyGroupToggles(); }
+});
+
+/* =========================================================================
+   CHARTS
+   ========================================================================= */
+let charts = {};
+function destroyChart(key){ if(charts[key]){ charts[key].destroy(); delete charts[key]; } }
+function renderCharts(){
+  if(typeof Chart === 'undefined'){
+    document.getElementById('chartLibError').style.display = 'block';
+    return;
+  }
+  document.getElementById('chartLibError').style.display = 'none';
+  const rows = computeLedger();
+  const labels = rows.map(r => r.age);
+  const firstShortfall = rows.find(r => r.shortfall);
+
+  const stats = document.getElementById('chartStats');
+  const finalRow = rows[rows.length-1];
+  stats.innerHTML =
+    '<div class="stat"><div class="stat-label">Net worth today</div><div class="stat-value mono">S$' + fmt2(rows[0].netWorth) + '</div></div>' +
+    '<div class="stat"><div class="stat-label">Net worth at age ' + finalRow.age + '</div><div class="stat-value mono">S$' + fmt2(finalRow.netWorth) + '</div></div>' +
+    '<div class="stat"><div class="stat-label">Lowest liquid cash</div><div class="stat-value mono ' + (Math.min(...rows.map(r=>r.cash))<0?'danger':'') + '">S$' + fmt2(Math.min(...rows.map(r=>r.cash))) + '</div></div>' +
+    '<div class="stat"><div class="stat-label">First cash shortfall</div><div class="stat-value mono ' + (firstShortfall?'danger':'') + '">' + (firstShortfall ? firstShortfall.year : 'None') + '</div></div>';
+
+  destroyChart('risk');
+  charts.risk = new Chart(document.getElementById('chartRiskOverTime'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Risk-on', data: rows.map(r=>r.riskOn), borderColor:'#2C5FA8', backgroundColor:'rgba(44,95,168,0.25)', fill:true, stack:'a', tension:0.25, pointRadius:0 },
+      { label:'Risk-off', data: rows.map(r=>r.riskOff), borderColor:'#1F6F54', backgroundColor:'rgba(31,111,84,0.25)', fill:true, stack:'a', tension:0.25, pointRadius:0 },
+    ]},
+    options:{ responsive:true, interaction:{mode:'index',intersect:false}, scales:{ x:{ title:{display:true,text:'Age'} }, y:{ stacked:true, ticks:{ callback:v=>'S$'+fmt2(v) } } }, plugins:{ legend:{position:'bottom'} } }
+  });
+
+  destroyChart('cash');
+  charts.cash = new Chart(document.getElementById('chartLiquidCash'), {
+    type:'line',
+    data:{ labels, datasets:[{ label:'Liquid cash', data: rows.map(r=>r.cash), borderColor:'#1F6F54',
+      pointBackgroundColor: rows.map(r=>r.cash<0?'#A23B2E':'#1F6F54'), pointRadius:2, segment:{ borderColor: ctx => ctx.p0.parsed.y<0||ctx.p1.parsed.y<0 ? '#A23B2E' : '#1F6F54' }, tension:0.2 }]},
+    options:{ responsive:true, scales:{ x:{ title:{display:true,text:'Age'} }, y:{ ticks:{ callback:v=>'S$'+fmt2(v) } } }, plugins:{ legend:{display:false} } }
+  });
+
+  destroyChart('cashflow');
+  charts.cashflow = new Chart(document.getElementById('chartCashflow'), {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'Net cashflow', data: rows.map(r=>r.cashflow), backgroundColor: rows.map(r=>r.cashflow<0?'#A23B2E':'#1F6F54') }]},
+    options:{ responsive:true, scales:{ x:{ title:{display:true,text:'Age'} }, y:{ ticks:{ callback:v=>'S$'+fmt2(v) } } }, plugins:{ legend:{display:false} } }
+  });
+
+  destroyChart('networth');
+  charts.networth = new Chart(document.getElementById('chartNetWorth'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Cash', data: rows.map(r=>r.cash), backgroundColor:'rgba(184,121,46,0.35)', borderColor:'#B8792E', fill:true, stack:'a', pointRadius:0 },
+      { label:'CPF', data: rows.map(r=>r.cpfTotal), backgroundColor:'rgba(31,111,84,0.35)', borderColor:'#1F6F54', fill:true, stack:'a', pointRadius:0 },
+      { label:'Investments', data: rows.map(r=>r.investTotal), backgroundColor:'rgba(44,95,168,0.35)', borderColor:'#2C5FA8', fill:true, stack:'a', pointRadius:0 },
+      { label:'Policies', data: rows.map(r=>r.policyTotal), backgroundColor:'rgba(162,59,46,0.25)', borderColor:'#A23B2E', fill:true, stack:'a', pointRadius:0 },
+    ]},
+    options:{ responsive:true, interaction:{mode:'index',intersect:false}, scales:{ x:{ title:{display:true,text:'Age'} }, y:{ stacked:true, ticks:{ callback:v=>'S$'+fmt2(v) } } }, plugins:{ legend:{position:'bottom'} } }
+  });
+
+  const slider = document.getElementById('yearSlider');
+  slider.max = rows.length - 1;
+  if(!slider.dataset.bound){
+    slider.addEventListener('input', () => renderDonuts(rows, parseInt(slider.value)));
+    slider.dataset.bound = '1';
+  }
+  if(parseInt(slider.value) > rows.length-1) slider.value = 0;
+  renderDonuts(rows, parseInt(slider.value)||0);
+}
+function renderDonuts(rows, idx){
+  const r = rows[idx];
+  document.getElementById('yearSliderLabel').textContent = 'Age ' + r.age + ' · ' + r.year;
+
+  destroyChart('riskDonut');
+  charts.riskDonut = new Chart(document.getElementById('chartRiskDonut'), {
+    type:'doughnut',
+    data:{ labels:['Risk-on','Risk-off'], datasets:[{ data:[r.riskOn, r.riskOff], backgroundColor:['#2C5FA8','#1F6F54'] }] },
+    options:{ plugins:{ legend:{position:'bottom'} } }
+  });
+
+  destroyChart('compDonut');
+  charts.compDonut = new Chart(document.getElementById('chartCompDonut'), {
+    type:'doughnut',
+    data:{ labels:['Cash','CPF','Investments','Policies'], datasets:[{ data:[r.cash<0?0:r.cash, r.cpfTotal, r.investTotal, r.policyTotal], backgroundColor:['#B8792E','#1F6F54','#2C5FA8','#A23B2E'] }] },
+    options:{ plugins:{ legend:{position:'bottom'} } }
+  });
+}
+
+/* =========================================================================
+   EXPORT / IMPORT
+   ========================================================================= */
+function downloadBlob(content, filename, mime){
+  const blob = new Blob([content], {type:mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function exportJSON(){
+  const name = (state.meta.clientName || 'client').replace(/[^a-z0-9]+/gi,'_');
+  downloadBlob(JSON.stringify(state, null, 2), name + '_financial_plan.json', 'application/json');
+}
+function handleImport(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const loaded = JSON.parse(e.target.result);
+      state = loaded;
+      initAll();
+    } catch(err){
+      alert('This file could not be read as a saved plan. Please check it is a .json file exported from this tool.');
+    }
+  };
+  reader.readAsText(file);
+  evt.target.value = '';
+}
+function exportCSV(){
+  const rows = computeLedger();
+  const header = ['Age','Year','Gross/mo','Gross/yr','Employee CPF','Nett/yr','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','Total cash out','Opening cash','Net cashflow','Drawn from assets','Closing cash','Emergency reserve target','Employer CPF','OA','SA/RA','MA','CPF total','Investments total','Policies total','Risk-on','Risk-off','Net worth'];
+  let csv = header.join(',') + '\n';
+  rows.forEach(r => {
+    csv += [r.age,r.year,r.grossMonthly,r.grossYearly,r.employeeCPF,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.totalCashExpenses,r.openingCash,r.cashflow,r.drawdownTotal,r.cash,r.emergencyReserveTarget,r.employerCPF,r.oa,r.saOrRa,r.ma,r.cpfTotal,r.investTotal,r.policyTotal,r.riskOn,r.riskOff,r.netWorth]
+      .map(v => Math.round((v||0)*100)/100).join(',') + '\n';
+  });
+  const name = (state.meta.clientName || 'client').replace(/[^a-z0-9]+/gi,'_');
+  downloadBlob(csv, name + '_ledger.csv', 'text/csv');
+}
+
+/* =========================================================================
+   EXAMPLE CLIENT / RESET
+   ========================================================================= */
+function loadExample(){
+  state = defaultState();
+  state.meta = { clientName:'Tan Wei Ming (example)', currentYear:2026, currentAge:35, endAge:95, residency:'SC' };
+  state.assumptions.bhsAtStart = 79000;
+  state.assumptions.bhsGrowthPct = 5;
+  state.income = { grossBaseMonthly:7000, annualIncreasePct:3, bonusMonths:2, retirementYear:2056,
+    bridge:{ enabled:true, startYear:2050, endYear:2055, mode:'percent', monthlyIncome:3500, decreasePct:45, annualIncreasePct:0 } };
+  state.cpfStart = { oa:80000, sa:60000, ra:0, ma:40000 };
+  state.cash = { startingBalance:50000, interestPct:0.5, emergencyMonths:6 };
+  state.cpfLife = { monthlyPayout:1700, startAge:65 };
+  state.drawdown = { oaSequence:3 };
+  state.rental = [{ id:uid(), name:'Tampines condo (rented out)', yearlyAmount:28800, startYear:2026, endYear:null, stepEveryYears:5, stepPct:3 }];
+  state.otherIncome = [];
+  state.investments = [
+    { id:uid(), name:'Endowus Flagship (Growth)', startYear:2026, initialCapital:60000, contribAmount:1000, contribFreq:'monthly', contribEndYear:2055, growthPct:6, dividendPct:0, dividendPayout:false, riskBucket:'risk-on', drawdownSequence:1 },
+    { id:uid(), name:'T-bills / SSB ladder', startYear:2026, initialCapital:30000, contribAmount:0, contribFreq:'yearly', contribEndYear:null, growthPct:3, dividendPct:0, dividendPayout:false, riskBucket:'risk-off', drawdownSequence:2 },
+  ];
+  state.policies = [
+    { id:uid(), name:'Whole life (participating)', startYear:2016, premiumAmount:3600, premiumFreq:'yearly', premiumEndYear:2041, growthPct:3.5, maturityYear:null, maturityValue:null, couponStartYear:null, couponEndYear:null, couponAmount:0, couponType:'level', couponIncrementPct:0, riskBucket:'risk-off', drawdownSequence:4 },
+    { id:uid(), name:'Endowment (income plan)', startYear:2020, premiumAmount:12000, premiumFreq:'yearly', premiumEndYear:2035, growthPct:3, maturityYear:null, maturityValue:null, couponStartYear:2036, couponEndYear:2055, couponAmount:6000, couponType:'level', couponIncrementPct:0, riskBucket:'risk-off', drawdownSequence:5 },
+  ];
+  state.shieldBands = [
+    { id:uid(), minAge:0, maxAge:40, cashPremium:400, medisavePremium:0 },
+    { id:uid(), minAge:41, maxAge:50, cashPremium:600, medisavePremium:200 },
+    { id:uid(), minAge:51, maxAge:60, cashPremium:900, medisavePremium:500 },
+    { id:uid(), minAge:61, maxAge:70, cashPremium:1500, medisavePremium:1000 },
+    { id:uid(), minAge:71, maxAge:80, cashPremium:2400, medisavePremium:1800 },
+    { id:uid(), minAge:81, maxAge:120, cashPremium:3600, medisavePremium:2800 },
+  ];
+  state.generalExpenses = [
+    { id:uid(), name:'Household & groceries', amount:2200, freq:'monthly', startYear:2026, endYear:null },
+    { id:uid(), name:'Transport', amount:600, freq:'monthly', startYear:2026, endYear:null },
+    { id:uid(), name:'Children education', amount:12000, freq:'yearly', startYear:2026, endYear:2044 },
+  ];
+  state.fixedExpenses = [
+    { id:uid(), name:'Home loan instalment (cash)', amount:2800, freq:'monthly', startYear:2026, endYear:2046 },
+    { id:uid(), name:'Life insurance premiums', amount:4800, freq:'yearly', startYear:2026, endYear:2056 },
+    { id:uid(), name:'Income tax', amount:6000, freq:'yearly', startYear:2026, endYear:2055 },
+  ];
+  state.cashDetail = [
+    { id:uid(), bank:'DBS', account:'Multiplier', balance:35000, interestPct:2.1 },
+    { id:uid(), bank:'OCBC', account:'Passbook', balance:15000, interestPct:0.05 },
+  ];
+  initAll();
+}
+function resetState(){
+  if(!confirm('Start a new blank client? Unsaved changes to the current client will be lost unless you export first.')) return;
+  state = defaultState();
+  initAll();
+}
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+function initAll(){
+  populateFields();
+  renderAllListEditors();
+  updateTopbar();
+  showTab('client');
+}
+buildNav();
+initAll();
+
+// Fallback: if the primary CDN for the charting library didn't load, try a second one.
+window.addEventListener('load', function(){
+  if(typeof Chart === 'undefined'){
+    const fallback = document.createElement('script');
+    fallback.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+    fallback.onload = function(){
+      const activePanel = document.querySelector('.panel.active');
+      if(activePanel && activePanel.id === 'panel-charts') renderCharts();
+    };
+    document.head.appendChild(fallback);
+  }
+});
+</script>
+</body>
+</html>
