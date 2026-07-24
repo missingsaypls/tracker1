@@ -514,9 +514,9 @@
         <div class="ledger-toolbar">
           <div class="group-toggles">
             <span style="font-weight:700; color:var(--ink);">Show columns:</span>
-            <label><input type="checkbox" data-grp="income" checked> Income</label>
-            <label><input type="checkbox" data-grp="expenses" checked> Expenses</label>
-            <label><input type="checkbox" data-grp="cashflow" checked> Cashflow</label>
+            <label><input type="checkbox" data-grp="income" checked> Cash inflows</label>
+            <label><input type="checkbox" data-grp="expenses" checked> Cash outflows</label>
+            <label><input type="checkbox" data-grp="cashflow" checked> Net cashflow</label>
             <label><input type="checkbox" data-grp="cpf" checked> CPF</label>
             <label><input type="checkbox" data-grp="investments" checked> Investments</label>
             <label><input type="checkbox" data-grp="policies" checked> Policies</label>
@@ -780,9 +780,29 @@ function capMedisave(ma, sa, ra, age, bhs){
   }
   return { ma, sa, ra };
 }
+// Once RA has reached the Full Retirement Sum, further money that would flow into RA
+// (new contributions, or Medisave overflow) is redirected to OA instead — per CPF rules.
+function capRaAtFrs(oa, ra, frsTarget){
+  if(ra > frsTarget){
+    const excess = ra - frsTarget;
+    ra = frsTarget;
+    oa += excess;
+  }
+  return { oa, ra };
+}
+// Single shared numbering across investments and policies (investments first), so the same
+// asset always carries the same reference number in the ledger, drawdown tab, and list editors.
+function getAssetNumberMap(){
+  const map = {};
+  let idx = 1;
+  state.investments.forEach(inv => { map[inv.id] = idx++; });
+  state.policies.forEach(p => { map[p.id] = idx++; });
+  return map;
+}
 
 function computeLedger(){
   const rows = [];
+  const assetNumbers = getAssetNumberMap();
   let oa = state.cpfStart.oa||0, sa = state.cpfStart.sa||0, ma = state.cpfStart.ma||0, ra = state.cpfStart.ra||0;
   let cash = state.cash.startingBalance||0;
   let raTransferred = state.meta.currentAge >= 55;
@@ -819,7 +839,12 @@ function computeLedger(){
       const c = (cpfMode === 1 || cpfMode === 2) ? cpfForYearGraduated(age, grossMonthly, bonus, state.assumptions, cpfMode) : cpfForYear(age, grossMonthly, bonus, state.assumptions);
       employeeCPF = c.employeeCPF; employerCPF = c.employerCPF;
       oa += c.oaAmt; ma += c.maAmt;
-      if(c.toAccount === 'sa') sa += c.saOrRaAmt; else ra += c.saOrRaAmt;
+      if(c.toAccount === 'sa') {
+        sa += c.saOrRaAmt;
+      } else {
+        ra += c.saOrRaAmt;
+        ({oa, ra} = capRaAtFrs(oa, ra, state.assumptions.frsTarget));
+      }
     }
     const nettYearly = grossYearly - employeeCPF;
 
@@ -829,6 +854,7 @@ function computeLedger(){
     const bhs = getBasicHealthcareSum(year, age, lockedBhsRef);
     if(cpfActive){
       ({ma, sa, ra} = capMedisave(ma, sa, ra, age, bhs));
+      ({oa, ra} = capRaAtFrs(oa, ra, state.assumptions.frsTarget));
 
       if(age === 55 && !raTransferred){
         const transferSa = sa;
@@ -845,6 +871,7 @@ function computeLedger(){
 
       // Re-cap Medisave after interest crediting
       ({ma, sa, ra} = capMedisave(ma, sa, ra, age, bhs));
+      ({oa, ra} = capRaAtFrs(oa, ra, state.assumptions.frsTarget));
 
       // CPF OA becomes eligible for drawdown once the client is 55+ and RA has reached the Full Retirement Sum
       if(age >= 55 && ra >= state.assumptions.frsTarget) oaDrawdownUnlocked = true;
@@ -852,13 +879,15 @@ function computeLedger(){
 
     // Investments — grow, pay/reinvest dividends, take contributions (values held on investState; totals finalised after drawdown)
     let investDividendCash=0, investContribution=0;
+    const cashSources = [];
     for(const inv of state.investments){
       const st = investState[inv.id];
       if(year < inv.startYear) continue;
       const priorValue = st.value;
       let value = priorValue * (1 + (inv.growthPct||0)/100);
       const dividend = priorValue * (inv.dividendPct||0)/100;
-      if(inv.dividendPayout) investDividendCash += dividend; else value += dividend;
+      if(inv.dividendPayout && dividend > 0){ investDividendCash += dividend; cashSources.push({ num: assetNumbers[inv.id], label: inv.name||'Investment', amount: dividend, source:'dividend' }); }
+      else value += dividend;
       const contribActive = year <= (inv.contribEndYear || 9999);
       if(contribActive && inv.contribAmount){
         const c = inv.contribFreq === 'monthly' ? inv.contribAmount*12 : inv.contribAmount;
@@ -881,15 +910,17 @@ function computeLedger(){
         else if(p.premiumFreq === 'single') prem = (year === p.startYear) ? p.premiumAmount : 0;
         value += prem; policyPremium += prem;
       }
+      let policyCashThisYear = 0;
       if(p.couponAmount && p.couponStartYear && year >= p.couponStartYear && year <= (p.couponEndYear||9999)){
         const yrs = year - p.couponStartYear;
         const couponAmt = p.couponType === 'incremental' ? p.couponAmount * Math.pow(1+(p.couponIncrementPct||0)/100, Math.max(yrs,0)) : p.couponAmount;
-        value -= couponAmt; policyCouponCash += couponAmt;
+        value -= couponAmt; policyCouponCash += couponAmt; policyCashThisYear += couponAmt;
       }
       if(p.maturityYear && year === p.maturityYear){
         const payout = p.maturityValue ? p.maturityValue : value;
-        policyMaturityCash += payout; value = 0; st.ended = true;
+        policyMaturityCash += payout; policyCashThisYear += payout; value = 0; st.ended = true;
       }
+      if(policyCashThisYear > 0) cashSources.push({ num: assetNumbers[p.id], label: p.name||'Policy', amount: policyCashThisYear, source: p.maturityYear===year?'maturity':'coupon' });
       st.value = Math.max(value,0);
     }
 
@@ -940,11 +971,12 @@ function computeLedger(){
       let shortfall = -cash;
       const candidates = [];
       if(state.drawdown.oaSequence) candidates.push({ type:'oa', seq:state.drawdown.oaSequence, label:'CPF OA' });
-      state.investments.forEach(inv => { if(inv.drawdownSequence) candidates.push({ type:'investment', id:inv.id, seq:inv.drawdownSequence, label:inv.name||'Investment' }); });
-      state.policies.forEach(p => { if(p.drawdownSequence) candidates.push({ type:'policy', id:p.id, seq:p.drawdownSequence, label:p.name||'Policy' }); });
+      state.investments.forEach(inv => { if(inv.drawdownSequence) candidates.push({ type:'investment', id:inv.id, seq:inv.drawdownSequence, label:inv.name||'Investment', liquidFromYear:inv.liquidFromYear||null }); });
+      state.policies.forEach(p => { if(p.drawdownSequence) candidates.push({ type:'policy', id:p.id, seq:p.drawdownSequence, label:p.name||'Policy', liquidFromYear:p.liquidFromYear||null }); });
       candidates.sort((a,b) => a.seq - b.seq);
       for(const c of candidates){
         if(shortfall <= 0.5) break;
+        if(c.type !== 'oa' && c.liquidFromYear && year < c.liquidFromYear) continue;
         let available = 0;
         if(c.type === 'oa'){
           if(age < 55 || !oaDrawdownUnlocked) continue;
@@ -1002,7 +1034,7 @@ function computeLedger(){
       cashflow, openingCash, drawdownTotal, drawdownDetail, cash,
       emergencyReserveTarget, cashAboveReserve,
       oa, saOrRa, saOrRaLabel, ma, ra, cpfTotal, bhs, oaDrawdownUnlocked,
-      investDetails, investTotal, policyDetails, policyTotal, srsValue,
+      investDetails, investTotal, policyDetails, policyTotal, srsValue, cashSources,
       riskOn, riskOff, netWorth,
       shortfall: cash < 0
     });
@@ -1072,6 +1104,7 @@ function renderListEditor(containerId, listRef, schema, opts){
     table.className = 'list-editor';
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
+    if(opts.getIndex){ const th0 = document.createElement('th'); th0.textContent = '#'; headRow.appendChild(th0); }
     schema.forEach(f => { const th = document.createElement('th'); th.textContent = f.label; headRow.appendChild(th); });
     headRow.appendChild(document.createElement('th'));
     thead.appendChild(headRow);
@@ -1079,6 +1112,12 @@ function renderListEditor(containerId, listRef, schema, opts){
     const tbody = document.createElement('tbody');
     listRef.forEach((item, idx) => {
       const tr = document.createElement('tr');
+      if(opts.getIndex){
+        const tdIdx = document.createElement('td');
+        tdIdx.textContent = '#' + opts.getIndex(item);
+        tdIdx.style.fontWeight = '700'; tdIdx.style.color = 'var(--ink-muted)'; tdIdx.style.textAlign = 'center';
+        tr.appendChild(tdIdx);
+      }
       schema.forEach(f => {
         const td = document.createElement('td');
         let input;
@@ -1154,6 +1193,7 @@ const investmentSchema = [
   {key:'dividendPct', label:'Yearly dividend (%)', type:'number', step:0.1},
   {key:'dividendPayout', label:'Pay dividend to cash?', type:'checkbox'},
   {key:'riskBucket', label:'Risk bucket', type:'select', options:[{value:'risk-on',label:'Risk-on'},{value:'risk-off',label:'Risk-off'}]},
+  {key:'liquidFromYear', label:'Liquid from year (blank = immediately)', type:'number'},
 ];
 const policySchema = [
   {key:'name', label:'Policy', type:'text', placeholder:'e.g. Whole life plan'},
@@ -1172,6 +1212,7 @@ const policySchema = [
   {key:'couponType', label:'Coupon type', type:'select', options:[{value:'level',label:'Level'},{value:'incremental',label:'Incremental'}]},
   {key:'couponIncrementPct', label:'Coupon increment (%/yr)', type:'number', step:0.1},
   {key:'riskBucket', label:'Risk bucket', type:'select', options:[{value:'risk-off',label:'Risk-off'},{value:'risk-on',label:'Risk-on'}]},
+  {key:'liquidFromYear', label:'Liquid from year (blank = immediately)', type:'number'},
 ];
 const shieldSchema = [
   {key:'minAge', label:'Age from', type:'number'},
@@ -1203,8 +1244,9 @@ const cashDetailSchema = [
 function renderAllListEditors(){
   renderListEditor('rentalEditor', state.rental, rentalSchema, {addLabel:'+ Add rental property', emptyText:'No rental income added.', newItem:()=>({id:uid(),name:'',yearlyAmount:0,startYear:state.meta.currentYear,endYear:null,stepEveryYears:5,stepPct:3})});
   renderListEditor('otherIncomeEditor', state.otherIncome, otherIncomeSchema, {addLabel:'+ Add income stream', emptyText:'No other income streams added.', newItem:()=>({id:uid(),name:'',yearlyAmount:0,startYear:state.meta.currentYear,endYear:null,growthPct:0})});
-  renderListEditor('investmentsEditor', state.investments, investmentSchema, {addLabel:'+ Add investment', emptyText:'No investments added.', newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,initialCapital:0,contribAmount:0,contribFreq:'monthly',contribEndYear:null,growthPct:5,dividendPct:0,dividendPayout:false,riskBucket:'risk-on',drawdownSequence:null})});
-  renderListEditor('policiesEditor', state.policies, policySchema, {addLabel:'+ Add policy', emptyText:'No insurance policies added.', newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,currentValue:0,premiumAmount:0,premiumFreq:'yearly',premiumEndYear:null,growthPct:3,maturityYear:null,maturityValue:null,couponStartYear:null,couponEndYear:null,couponAmount:0,couponType:'level',couponIncrementPct:0,riskBucket:'risk-off',drawdownSequence:null})});
+  const assetNumbers = getAssetNumberMap();
+  renderListEditor('investmentsEditor', state.investments, investmentSchema, {addLabel:'+ Add investment', emptyText:'No investments added.', getIndex:(item)=>assetNumbers[item.id], newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,initialCapital:0,contribAmount:0,contribFreq:'monthly',contribEndYear:null,growthPct:5,dividendPct:0,dividendPayout:false,riskBucket:'risk-on',drawdownSequence:null,liquidFromYear:null})});
+  renderListEditor('policiesEditor', state.policies, policySchema, {addLabel:'+ Add policy', emptyText:'No insurance policies added.', getIndex:(item)=>assetNumbers[item.id], newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,currentValue:0,premiumAmount:0,premiumFreq:'yearly',premiumEndYear:null,growthPct:3,maturityYear:null,maturityValue:null,couponStartYear:null,couponEndYear:null,couponAmount:0,couponType:'level',couponIncrementPct:0,riskBucket:'risk-off',drawdownSequence:null,liquidFromYear:null})});
   renderListEditor('shieldEditor', state.shieldBands, shieldSchema, {addLabel:'+ Add age band', emptyText:'No premium table entered yet.', newItem:()=>({id:uid(),minAge:0,maxAge:99,cashPremium:0,medisavePremium:0})});
   renderListEditor('generalExpEditor', state.generalExpenses, generalExpSchema, {addLabel:'+ Add expense', emptyText:'No general expenses added.', newItem:()=>({id:uid(),name:'',amount:0,freq:'monthly',startYear:state.meta.currentYear,endYear:null})});
   renderListEditor('fixedExpEditor', state.fixedExpenses, fixedExpSchema, {addLabel:'+ Add fixed expense', emptyText:'No fixed expenses added.', newItem:()=>({id:uid(),name:'',amount:0,freq:'yearly',startYear:state.meta.currentYear,endYear:null})});
@@ -1214,10 +1256,11 @@ function renderAllListEditors(){
 function renderDrawdownTab(){
   const container = document.getElementById('drawdownEditor');
   container.innerHTML = '';
+  const assetNumbers = getAssetNumberMap();
   const items = [];
   items.push({ label:'CPF Ordinary Account (OA)', type:'CPF', getSeq:()=>state.drawdown.oaSequence, setSeq:v=>state.drawdown.oaSequence=v, note:'Skipped until age 55+ and RA ≥ Full Retirement Sum' });
-  state.investments.forEach(inv => items.push({ label: inv.name || 'Untitled investment', type:'Investment', getSeq:()=>inv.drawdownSequence, setSeq:v=>inv.drawdownSequence=v, note:'' }));
-  state.policies.forEach(p => items.push({ label: p.name || 'Untitled policy', type:'Policy', getSeq:()=>p.drawdownSequence, setSeq:v=>p.drawdownSequence=v, note:'Treated as a partial surrender' }));
+  state.investments.forEach(inv => items.push({ label: '#' + assetNumbers[inv.id] + ' ' + (inv.name || 'Untitled investment'), type:'Investment', getSeq:()=>inv.drawdownSequence, setSeq:v=>inv.drawdownSequence=v, note: inv.liquidFromYear ? ('Liquid from ' + inv.liquidFromYear) : '' }));
+  state.policies.forEach(p => items.push({ label: '#' + assetNumbers[p.id] + ' ' + (p.name || 'Untitled policy'), type:'Policy', getSeq:()=>p.drawdownSequence, setSeq:v=>p.drawdownSequence=v, note: (p.liquidFromYear ? ('Liquid from ' + p.liquidFromYear + '. ') : '') + 'Treated as a partial surrender' }));
 
   if(items.length === 1){
     const empty = document.createElement('div');
@@ -1366,27 +1409,28 @@ function renderLedger(){
     ? '<div class="shortfall-banner">⚠ On current assumptions, liquid cash first goes negative in ' + firstShortfall.year + ' (age ' + firstShortfall.age + ').</div>'
     : '';
 
-  const invCols = state.investments.map(i => ({ id:i.id, label: i.name || 'Investment' }));
-  const polCols = state.policies.map(p => ({ id:p.id, label: p.name || 'Policy' }));
+  const assetNumbers = getAssetNumberMap();
+  const invCols = state.investments.map(i => ({ id:i.id, label: '#' + assetNumbers[i.id] + ' ' + (i.name || 'Investment') }));
+  const polCols = state.policies.map(p => ({ id:p.id, label: '#' + assetNumbers[p.id] + ' ' + (p.name || 'Policy') }));
 
   let html = '<table class="ledger">';
   html += '<thead>';
   html += '<tr class="group-row">';
   html += '<th class="col-age" rowspan="2">Age</th><th class="col-year" rowspan="2">Year</th>';
-  html += '<th data-group="income" colspan="12">Income</th>';
-  html += '<th data-group="expenses" colspan="7">Expenses</th>';
-  html += '<th data-group="cashflow" colspan="5">Cashflow</th>';
-  html += '<th data-group="cpf" colspan="5">CPF</th>';
+  html += '<th data-group="income" colspan="10">Cash inflows</th>';
+  html += '<th data-group="expenses" colspan="7">Cash outflows</th>';
+  html += '<th data-group="cashflow" colspan="4">Net cashflow</th>';
+  html += '<th data-group="cpf" colspan="6">CPF</th>';
   html += '<th data-group="investments" colspan="' + (invCols.length+1) + '">Investments</th>';
   html += '<th data-group="policies" colspan="' + (polCols.length+1) + '">Policies</th>';
   html += '<th data-group="srs" colspan="1">SRS</th>';
   html += '<th data-group="allocation" colspan="3">Allocation</th>';
   html += '</tr>';
   html += '<tr class="col-row">';
-  html += '<th data-group="income">Gross/mo</th><th data-group="income">Gross/yr</th><th data-group="income">Employee CPF</th><th data-group="income">Nett/yr</th><th data-group="income">Rental</th><th data-group="income">Other inc.</th><th data-group="income">Inv. dividends</th><th data-group="income">Policy coupons</th><th data-group="income">Policy maturity</th><th data-group="income">CPF LIFE</th><th data-group="income">SRS withdrawal</th><th data-group="income">Total cash in</th>';
+  html += '<th data-group="income">Nett income</th><th data-group="income">Rental</th><th data-group="income">Other inc.</th><th data-group="income">Inv. dividends</th><th data-group="income">Policy coupons</th><th data-group="income">Policy maturity</th><th data-group="income">CPF LIFE</th><th data-group="income">SRS withdrawal</th><th data-group="income">Cash-generating assets</th><th data-group="income">Total cash in</th>';
   html += '<th data-group="expenses">General (infl.)</th><th data-group="expenses">Fixed</th><th data-group="expenses">Shield (cash)</th><th data-group="expenses">Inv. contrib.</th><th data-group="expenses">Policy premiums</th><th data-group="expenses">SRS contribution</th><th data-group="expenses">Total cash out</th>';
-  html += '<th data-group="cashflow">Opening cash</th><th data-group="cashflow">Net cashflow</th><th data-group="cashflow">Drawn from assets</th><th data-group="cashflow">Closing cash</th><th data-group="cashflow">Emergency reserve target</th>';
-  html += '<th data-group="cpf">Employer CPF</th><th data-group="cpf">OA</th><th data-group="cpf">SA/RA</th><th data-group="cpf">MA</th><th data-group="cpf">CPF total</th>';
+  html += '<th data-group="cashflow">Net cashflow</th><th data-group="cashflow">Drawn from assets</th><th data-group="cashflow">Closing cash</th><th data-group="cashflow">Emergency reserve target</th>';
+  html += '<th data-group="cpf">Employer CPF</th><th data-group="cpf">OA</th><th data-group="cpf">SA/RA</th><th data-group="cpf">MA</th><th data-group="cpf">BHS cap</th><th data-group="cpf">CPF total</th>';
   invCols.forEach(c => html += '<th data-group="investments">' + c.label + '</th>');
   html += '<th data-group="investments">Investments total</th>';
   polCols.forEach(c => html += '<th data-group="policies">' + c.label + '</th>');
@@ -1399,9 +1443,6 @@ function renderLedger(){
     const rowClass = (r.shortfall ? 'shortfall-row' : (r.phase==='retired' ? 'retired-row' : ''));
     html += '<tr class="' + rowClass + '">';
     html += '<td class="col-age mono">' + r.age + '</td><td class="col-year mono">' + r.year + '</td>';
-    html += '<td class="mono" data-group="income">' + fmt(r.grossMonthly) + '</td>';
-    html += '<td class="mono" data-group="income">' + fmt(r.grossYearly) + '</td>';
-    html += '<td class="mono" data-group="income">' + fmt(r.employeeCPF) + '</td>';
     html += '<td class="mono" data-group="income">' + fmt(r.nettYearly) + '</td>';
     html += '<td class="mono" data-group="income">' + fmt(r.rentalIncome) + '</td>';
     html += '<td class="mono" data-group="income">' + fmt(r.otherIncomeAmt) + '</td>';
@@ -1410,6 +1451,9 @@ function renderLedger(){
     html += '<td class="mono" data-group="income">' + fmt(r.policyMaturityCash) + '</td>';
     html += '<td class="mono" data-group="income">' + fmt(r.cpfLifePayout) + '</td>';
     html += '<td class="mono" data-group="income">' + fmt(r.srsWithdrawal) + '</td>';
+    const cashSourceLabel = r.cashSources.length ? r.cashSources.map(s => '#'+s.num).join(', ') : '—';
+    const cashSourceTitle = r.cashSources.length ? r.cashSources.map(s => '#'+s.num+' '+s.label+': S$'+fmt(s.amount)).join(' · ') : '';
+    html += '<td class="mono" data-group="income" title="' + cashSourceTitle + '">' + cashSourceLabel + '</td>';
     html += '<td class="mono pos-strong" data-group="income">' + fmt(r.totalCashIncome) + '</td>';
     html += '<td class="mono" data-group="expenses">' + fmt(r.generalExp) + '</td>';
     html += '<td class="mono" data-group="expenses">' + fmt(r.fixedExp) + '</td>';
@@ -1419,7 +1463,6 @@ function renderLedger(){
     html += '<td class="mono" data-group="expenses">' + fmt(r.srsContribution) + '</td>';
     html += '<td class="mono" data-group="expenses">' + fmt(r.totalCashExpenses) + '</td>';
     const drawdownTitle = r.drawdownDetail.length ? r.drawdownDetail.map(d => d.label + ': S$' + fmt(d.amount)).join(' · ') : '';
-    html += '<td class="mono" data-group="cashflow">' + fmt(r.openingCash) + '</td>';
     html += '<td class="mono ' + (r.cashflow<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cashflow) + '</td>';
     html += '<td class="mono" data-group="cashflow" title="' + drawdownTitle + '">' + fmt(r.drawdownTotal) + '</td>';
     html += '<td class="mono ' + (r.cash<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cash) + '</td>';
@@ -1428,6 +1471,7 @@ function renderLedger(){
     html += '<td class="mono" data-group="cpf">' + fmt(r.oa) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.saOrRa) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.ma) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.bhs) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.cpfTotal) + '</td>';
     r.investDetails.forEach(d => html += '<td class="mono" data-group="investments">' + fmt(d.value) + '</td>');
     html += '<td class="mono" data-group="investments">' + fmt(r.investTotal) + '</td>';
@@ -1579,11 +1623,12 @@ function handleImport(evt){
 }
 function exportCSV(){
   const rows = computeLedger();
-  const header = ['Age','Year','Gross/mo','Gross/yr','Employee CPF','Nett/yr','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','SRS withdrawal','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','SRS contribution','Total cash out','Opening cash','Net cashflow','Drawn from assets','Closing cash','Emergency reserve target','Employer CPF','OA','SA/RA','MA','CPF total','Investments total','Policies total','SRS value','Risk-on','Risk-off','Net worth'];
+  const header = ['Age','Year','Nett income','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','SRS withdrawal','Cash-generating assets','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','SRS contribution','Total cash out','Net cashflow','Drawn from assets','Closing cash','Emergency reserve target','Employer CPF','OA','SA/RA','MA','BHS cap','CPF total','Investments total','Policies total','SRS value','Risk-on','Risk-off','Net worth'];
   let csv = header.join(',') + '\n';
   rows.forEach(r => {
-    csv += [r.age,r.year,r.grossMonthly,r.grossYearly,r.employeeCPF,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.srsWithdrawal,r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.srsContribution,r.totalCashExpenses,r.openingCash,r.cashflow,r.drawdownTotal,r.cash,r.emergencyReserveTarget,r.employerCPF,r.oa,r.saOrRa,r.ma,r.cpfTotal,r.investTotal,r.policyTotal,r.srsValue,r.riskOn,r.riskOff,r.netWorth]
-      .map(v => Math.round((v||0)*100)/100).join(',') + '\n';
+    const cashSourceLabel = r.cashSources.length ? r.cashSources.map(s => '#'+s.num).join(';') : '';
+    csv += [r.age,r.year,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.srsWithdrawal,'"'+cashSourceLabel+'"',r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.srsContribution,r.totalCashExpenses,r.cashflow,r.drawdownTotal,r.cash,r.emergencyReserveTarget,r.employerCPF,r.oa,r.saOrRa,r.ma,r.bhs,r.cpfTotal,r.investTotal,r.policyTotal,r.srsValue,r.riskOn,r.riskOff,r.netWorth]
+      .map(v => typeof v === 'string' ? v : Math.round((v||0)*100)/100).join(',') + '\n';
   });
   const name = (state.meta.clientName || 'client').replace(/[^a-z0-9]+/gi,'_');
   downloadBlob(csv, name + '_ledger.csv', 'text/csv');
