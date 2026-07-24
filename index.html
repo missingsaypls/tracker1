@@ -466,7 +466,7 @@
         </div>
         <div class="card">
           <div class="card-title">CPF LIFE</div>
-          <div class="card-desc">Enter the client's estimated monthly payout from the official CPF LIFE Estimator (cpf.gov.sg). This tool cannot calculate the actuarial payout itself.</div>
+          <div class="card-desc">Enter the client's estimated monthly payout from the official CPF LIFE Estimator (cpf.gov.sg). This tool cannot calculate the actuarial payout itself. <b>Note:</b> from the start age below, CPF RA balance resets to $0 in the ledger regardless of what you enter here — RA capital gets annuitised into the CPF LIFE pool under the Standard Plan. If you leave the payout at $0, the ledger will show RA emptying out with nothing replacing it, which will understate the client's retirement income — make sure a real payout figure is entered once this age is reached.</div>
           <div class="grid">
             <div class="field"><label>Estimated monthly CPF LIFE payout ($)</label><input type="number" step="10" id="f-cpfLifePayout"></div>
             <div class="field"><label>Payout starts at age</label><input type="number" min="65" max="70" id="f-cpfLifeStart"></div>
@@ -525,6 +525,7 @@
           </div>
           <button class="btn btn-sm" onclick="window.print()">Print / Save as PDF</button>
         </div>
+        <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:10px;">* RA figure accumulated after CPF LIFE payouts began — interest-free, sits outside the guaranteed monthly payout.</div>
         <div class="ledger-scroll">
           <div class="ledger-wrap" id="ledgerWrap"></div>
         </div>
@@ -807,6 +808,7 @@ function computeLedger(){
   let cash = state.cash.startingBalance||0;
   let raTransferred = state.meta.currentAge >= 55;
   let oaDrawdownUnlocked = false;
+  let cpfLifeStarted = false;
   const lockedBhsRef = { value: null };
   const investState = {}; state.investments.forEach(inv => investState[inv.id] = { value: inv.initialCapital||0 });
   const policyState = {}; state.policies.forEach(p => policyState[p.id] = { value: p.currentValue||0, ended:false });
@@ -867,7 +869,10 @@ function computeLedger(){
       }
 
       const interest = computeCpfInterest(oa, sa, ma, ra, age, state.assumptions);
-      oa += interest.oaInterest; sa += interest.saInterest; ma += interest.maInterest; ra += interest.raInterest;
+      oa += interest.oaInterest; sa += interest.saInterest; ma += interest.maInterest;
+      // RA stops earning interest once CPF LIFE payouts begin — under the Standard Plan, RA interest
+      // from that point belongs to the CPF LIFE public pool, not the member's own account.
+      if(!cpfLifeStarted) ra += interest.raInterest;
 
       // Re-cap Medisave after interest crediting
       ({ma, sa, ra} = capMedisave(ma, sa, ra, age, bhs));
@@ -875,6 +880,14 @@ function computeLedger(){
 
       // CPF OA becomes eligible for drawdown once the client is 55+ and RA has reached the Full Retirement Sum
       if(age >= 55 && ra >= state.assumptions.frsTarget) oaDrawdownUnlocked = true;
+
+      // At the CPF LIFE start age, RA's capital is annuitised into the CPF LIFE pool — balance resets to 0.
+      // Any further RA-bound contributions after this point (client still working) accumulate afresh from
+      // zero, without interest, and are flagged with an asterisk in the ledger.
+      if(age >= state.cpfLife.startAge && !cpfLifeStarted){
+        ra = 0;
+        cpfLifeStarted = true;
+      }
     }
 
     // Investments — grow, pay/reinvest dividends, take contributions (values held on investState; totals finalised after drawdown)
@@ -956,7 +969,8 @@ function computeLedger(){
     const otherIncomeAmt = sumOtherIncome(year);
     const generalExp = sumGeneralExpenses(year);
     const fixedExp = sumFixedExpenses(year);
-    const cpfLifePayout = (age >= state.cpfLife.startAge) ? (state.cpfLife.monthlyPayout||0)*12 : 0;
+    const everHadCpf = state.meta.residency !== 'EP' || !!state.income.epCpfStartYear;
+    const cpfLifePayout = (everHadCpf && age >= state.cpfLife.startAge) ? (state.cpfLife.monthlyPayout||0)*12 : 0;
 
     const totalCashIncome = nettYearly + rentalIncome + otherIncomeAmt + investDividendCash + policyCouponCash + policyMaturityCash + cpfLifePayout + srsWithdrawal;
     const totalCashExpenses = generalExp + fixedExp + shieldCash + investContribution + policyPremium + srsContribution;
@@ -1033,7 +1047,7 @@ function computeLedger(){
       totalCashIncome, generalExp, fixedExp, shieldCash, investContribution, policyPremium, srsContribution, totalCashExpenses,
       cashflow, openingCash, drawdownTotal, drawdownDetail, cash,
       emergencyReserveTarget, cashAboveReserve,
-      oa, saOrRa, saOrRaLabel, ma, ra, cpfTotal, bhs, oaDrawdownUnlocked,
+      oa, saOrRa, saOrRaLabel, ma, ra, cpfTotal, bhs, oaDrawdownUnlocked, cpfLifeStarted,
       investDetails, investTotal, policyDetails, policyTotal, srsValue, cashSources,
       riskOn, riskOff, netWorth,
       shortfall: cash < 0
@@ -1469,7 +1483,8 @@ function renderLedger(){
     html += '<td class="mono" data-group="cashflow">' + fmt(r.emergencyReserveTarget) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.employerCPF) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.oa) + '</td>';
-    html += '<td class="mono" data-group="cpf">' + fmt(r.saOrRa) + '</td>';
+    const raAsterisk = (r.cpfLifeStarted && r.saOrRaLabel === 'RA') ? '<span title="Accumulated after CPF LIFE payouts began — interest-free, not part of the guaranteed monthly payout">*</span>' : '';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.saOrRa) + raAsterisk + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.ma) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.bhs) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.cpfTotal) + '</td>';
