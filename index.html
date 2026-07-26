@@ -499,7 +499,7 @@
       <!-- ===== PANEL: DRAWDOWN SEQUENCE ===== -->
       <div class="panel" id="panel-drawdown">
         <div class="info-box">
-          If liquid cash would run short in a given year, the tool automatically draws down from the assets below, in the order you set (1 = first, 2 = second, and so on). Leave an asset's sequence blank to exclude it from automatic drawdown — it will simply keep growing untouched. <b>CPF OA is forcibly skipped as a drawdown source until the client is 55 or older and their Retirement Account has reached the Full Retirement Sum</b> — CPF rules only free up OA savings once that's met, regardless of what sequence number you give it here.
+          If liquid cash would run short in a given year, the tool automatically draws down from the assets below, in the order you set (1 = first, 2 = second, and so on). Leave an asset's sequence blank to exclude it from automatic drawdown — it will simply keep growing untouched. <b>CPF OA is forcibly skipped as a drawdown source until the client is 55 or older and their Retirement Account has reached the Full Retirement Sum</b> — CPF rules only free up OA savings once that's met, regardless of what sequence number you give it here. Assets already paying out dividends, coupons, or a maturity sum (flagged 💰 below) can still be sequenced — typically last, as a genuine last resort, since drawing on them reduces the value those future payouts are calculated from.
         </div>
         <div class="card">
           <div class="card-title">Drawdown order</div>
@@ -800,6 +800,14 @@ function getAssetNumberMap(){
   state.policies.forEach(p => { map[p.id] = idx++; });
   return map;
 }
+// An asset that's already set up to pay the client cash (dividends to cash, coupons, or a maturity payout)
+// shouldn't also be forcibly drawn down/surrendered — its liquidity contribution is already modelled
+// on its own schedule. Applies regardless of what drawdown sequence number was assigned to it.
+function assetHasCashflow(item, type){
+  if(type === 'investment') return !!(item.dividendPayout && (item.dividendPct||0) > 0);
+  if(type === 'policy') return !!(((item.couponAmount||0) > 0 && item.couponStartYear) || item.maturityYear);
+  return false;
+}
 
 function computeLedger(){
   const rows = [];
@@ -1033,6 +1041,7 @@ function computeLedger(){
     // Risk allocation: cash above the emergency reserve, CPF OA and SA/RA count as risk-off.
     // Medisave and the emergency reserve itself are excluded — they aren't allocatable assets.
     const emergencyReserveTarget = (state.cash.emergencyMonths||0) * (totalCashExpenses/12);
+    const liquidAssets = cash + ((age >= 55 && everHadCpf) ? oa : 0);
     const cashAboveReserve = Math.max(cash - emergencyReserveTarget, 0);
     const srsRiskOn = state.srs.riskBucket === 'risk-on' ? srsValue : 0;
     const srsRiskOff = state.srs.riskBucket === 'risk-on' ? 0 : srsValue;
@@ -1046,7 +1055,7 @@ function computeLedger(){
       rentalIncome, otherIncomeAmt, investDividendCash, policyCouponCash, policyMaturityCash, cpfLifePayout, srsWithdrawal,
       totalCashIncome, generalExp, fixedExp, shieldCash, investContribution, policyPremium, srsContribution, totalCashExpenses,
       cashflow, openingCash, drawdownTotal, drawdownDetail, cash,
-      emergencyReserveTarget, cashAboveReserve,
+      emergencyReserveTarget, cashAboveReserve, liquidAssets,
       oa, saOrRa, saOrRaLabel, ma, ra, cpfTotal, bhs, oaDrawdownUnlocked, cpfLifeStarted,
       investDetails, investTotal, policyDetails, policyTotal, srsValue, cashSources,
       riskOn, riskOff, netWorth,
@@ -1258,9 +1267,8 @@ const cashDetailSchema = [
 function renderAllListEditors(){
   renderListEditor('rentalEditor', state.rental, rentalSchema, {addLabel:'+ Add rental property', emptyText:'No rental income added.', newItem:()=>({id:uid(),name:'',yearlyAmount:0,startYear:state.meta.currentYear,endYear:null,stepEveryYears:5,stepPct:3})});
   renderListEditor('otherIncomeEditor', state.otherIncome, otherIncomeSchema, {addLabel:'+ Add income stream', emptyText:'No other income streams added.', newItem:()=>({id:uid(),name:'',yearlyAmount:0,startYear:state.meta.currentYear,endYear:null,growthPct:0})});
-  const assetNumbers = getAssetNumberMap();
-  renderListEditor('investmentsEditor', state.investments, investmentSchema, {addLabel:'+ Add investment', emptyText:'No investments added.', getIndex:(item)=>assetNumbers[item.id], newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,initialCapital:0,contribAmount:0,contribFreq:'monthly',contribEndYear:null,growthPct:5,dividendPct:0,dividendPayout:false,riskBucket:'risk-on',drawdownSequence:null,liquidFromYear:null})});
-  renderListEditor('policiesEditor', state.policies, policySchema, {addLabel:'+ Add policy', emptyText:'No insurance policies added.', getIndex:(item)=>assetNumbers[item.id], newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,currentValue:0,premiumAmount:0,premiumFreq:'yearly',premiumEndYear:null,growthPct:3,maturityYear:null,maturityValue:null,couponStartYear:null,couponEndYear:null,couponAmount:0,couponType:'level',couponIncrementPct:0,riskBucket:'risk-off',drawdownSequence:null,liquidFromYear:null})});
+  renderListEditor('investmentsEditor', state.investments, investmentSchema, {addLabel:'+ Add investment', emptyText:'No investments added.', getIndex:(item)=>getAssetNumberMap()[item.id], newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,initialCapital:0,contribAmount:0,contribFreq:'monthly',contribEndYear:null,growthPct:5,dividendPct:0,dividendPayout:false,riskBucket:'risk-on',drawdownSequence:null,liquidFromYear:null})});
+  renderListEditor('policiesEditor', state.policies, policySchema, {addLabel:'+ Add policy', emptyText:'No insurance policies added.', getIndex:(item)=>getAssetNumberMap()[item.id], newItem:()=>({id:uid(),name:'',assetStatus:'existing',startYear:state.meta.currentYear,currentValue:0,premiumAmount:0,premiumFreq:'yearly',premiumEndYear:null,growthPct:3,maturityYear:null,maturityValue:null,couponStartYear:null,couponEndYear:null,couponAmount:0,couponType:'level',couponIncrementPct:0,riskBucket:'risk-off',drawdownSequence:null,liquidFromYear:null})});
   renderListEditor('shieldEditor', state.shieldBands, shieldSchema, {addLabel:'+ Add age band', emptyText:'No premium table entered yet.', newItem:()=>({id:uid(),minAge:0,maxAge:99,cashPremium:0,medisavePremium:0})});
   renderListEditor('generalExpEditor', state.generalExpenses, generalExpSchema, {addLabel:'+ Add expense', emptyText:'No general expenses added.', newItem:()=>({id:uid(),name:'',amount:0,freq:'monthly',startYear:state.meta.currentYear,endYear:null})});
   renderListEditor('fixedExpEditor', state.fixedExpenses, fixedExpSchema, {addLabel:'+ Add fixed expense', emptyText:'No fixed expenses added.', newItem:()=>({id:uid(),name:'',amount:0,freq:'yearly',startYear:state.meta.currentYear,endYear:null})});
@@ -1273,8 +1281,8 @@ function renderDrawdownTab(){
   const assetNumbers = getAssetNumberMap();
   const items = [];
   items.push({ label:'CPF Ordinary Account (OA)', type:'CPF', getSeq:()=>state.drawdown.oaSequence, setSeq:v=>state.drawdown.oaSequence=v, note:'Skipped until age 55+ and RA ≥ Full Retirement Sum' });
-  state.investments.forEach(inv => items.push({ label: '#' + assetNumbers[inv.id] + ' ' + (inv.name || 'Untitled investment'), type:'Investment', getSeq:()=>inv.drawdownSequence, setSeq:v=>inv.drawdownSequence=v, note: inv.liquidFromYear ? ('Liquid from ' + inv.liquidFromYear) : '' }));
-  state.policies.forEach(p => items.push({ label: '#' + assetNumbers[p.id] + ' ' + (p.name || 'Untitled policy'), type:'Policy', getSeq:()=>p.drawdownSequence, setSeq:v=>p.drawdownSequence=v, note: (p.liquidFromYear ? ('Liquid from ' + p.liquidFromYear + '. ') : '') + 'Treated as a partial surrender' }));
+  state.investments.forEach(inv => items.push({ label: '#' + assetNumbers[inv.id] + ' ' + (inv.name || 'Untitled investment'), type:'Investment', getSeq:()=>inv.drawdownSequence, setSeq:v=>inv.drawdownSequence=v, note: (assetHasCashflow(inv,'investment') ? '💰 Already pays dividends to cash. ' : '') + (inv.liquidFromYear ? ('Liquid from ' + inv.liquidFromYear) : '') }));
+  state.policies.forEach(p => items.push({ label: '#' + assetNumbers[p.id] + ' ' + (p.name || 'Untitled policy'), type:'Policy', getSeq:()=>p.drawdownSequence, setSeq:v=>p.drawdownSequence=v, note: (assetHasCashflow(p,'policy') ? '💰 Already pays coupons/maturity. ' : '') + (p.liquidFromYear ? ('Liquid from ' + p.liquidFromYear + '. ') : '') + 'Treated as a partial surrender' }));
 
   if(items.length === 1){
     const empty = document.createElement('div');
@@ -1433,7 +1441,7 @@ function renderLedger(){
   html += '<th class="col-age" rowspan="2">Age</th><th class="col-year" rowspan="2">Year</th>';
   html += '<th data-group="income" colspan="10">Cash inflows</th>';
   html += '<th data-group="expenses" colspan="7">Cash outflows</th>';
-  html += '<th data-group="cashflow" colspan="4">Net cashflow</th>';
+  html += '<th data-group="cashflow" colspan="5">Net cashflow</th>';
   html += '<th data-group="cpf" colspan="6">CPF</th>';
   html += '<th data-group="investments" colspan="' + (invCols.length+1) + '">Investments</th>';
   html += '<th data-group="policies" colspan="' + (polCols.length+1) + '">Policies</th>';
@@ -1443,7 +1451,7 @@ function renderLedger(){
   html += '<tr class="col-row">';
   html += '<th data-group="income">Nett income</th><th data-group="income">Rental</th><th data-group="income">Other inc.</th><th data-group="income">Inv. dividends</th><th data-group="income">Policy coupons</th><th data-group="income">Policy maturity</th><th data-group="income">CPF LIFE</th><th data-group="income">SRS withdrawal</th><th data-group="income">Cash-generating assets</th><th data-group="income">Total cash in</th>';
   html += '<th data-group="expenses">General (infl.)</th><th data-group="expenses">Fixed</th><th data-group="expenses">Shield (cash)</th><th data-group="expenses">Inv. contrib.</th><th data-group="expenses">Policy premiums</th><th data-group="expenses">SRS contribution</th><th data-group="expenses">Total cash out</th>';
-  html += '<th data-group="cashflow">Net cashflow</th><th data-group="cashflow">Drawn from assets</th><th data-group="cashflow">Closing cash</th><th data-group="cashflow">Emergency reserve target</th>';
+  html += '<th data-group="cashflow">Net cashflow</th><th data-group="cashflow">Drawn from assets</th><th data-group="cashflow">Closing cash</th><th data-group="cashflow">Liquid assets (cash+OA)</th><th data-group="cashflow">Emergency reserve target</th>';
   html += '<th data-group="cpf">Employer CPF</th><th data-group="cpf">OA</th><th data-group="cpf">SA/RA</th><th data-group="cpf">MA</th><th data-group="cpf">BHS cap</th><th data-group="cpf">CPF total</th>';
   invCols.forEach(c => html += '<th data-group="investments">' + c.label + '</th>');
   html += '<th data-group="investments">Investments total</th>';
@@ -1480,6 +1488,7 @@ function renderLedger(){
     html += '<td class="mono ' + (r.cashflow<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cashflow) + '</td>';
     html += '<td class="mono" data-group="cashflow" title="' + drawdownTitle + '">' + fmt(r.drawdownTotal) + '</td>';
     html += '<td class="mono ' + (r.cash<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cash) + '</td>';
+    html += '<td class="mono ' + (r.liquidAssets<0?'neg':'') + '" data-group="cashflow">' + fmt(r.liquidAssets) + '</td>';
     html += '<td class="mono" data-group="cashflow">' + fmt(r.emergencyReserveTarget) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.employerCPF) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.oa) + '</td>';
@@ -1548,7 +1557,7 @@ function renderCharts(){
   });
 
   destroyChart('cash');
-  const liquidAssets = rows.map(r => r.cash + ((r.age >= 55 && state.meta.residency !== 'EP') ? r.oa : 0));
+  const liquidAssets = rows.map(r => r.liquidAssets);
   charts.cash = new Chart(document.getElementById('chartLiquidCash'), {
     type:'line',
     data:{ labels, datasets:[
@@ -1638,11 +1647,11 @@ function handleImport(evt){
 }
 function exportCSV(){
   const rows = computeLedger();
-  const header = ['Age','Year','Nett income','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','SRS withdrawal','Cash-generating assets','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','SRS contribution','Total cash out','Net cashflow','Drawn from assets','Closing cash','Emergency reserve target','Employer CPF','OA','SA/RA','MA','BHS cap','CPF total','Investments total','Policies total','SRS value','Risk-on','Risk-off','Net worth'];
+  const header = ['Age','Year','Nett income','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','SRS withdrawal','Cash-generating assets','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','SRS contribution','Total cash out','Net cashflow','Drawn from assets','Closing cash','Liquid assets','Emergency reserve target','Employer CPF','OA','SA/RA','MA','BHS cap','CPF total','Investments total','Policies total','SRS value','Risk-on','Risk-off','Net worth'];
   let csv = header.join(',') + '\n';
   rows.forEach(r => {
     const cashSourceLabel = r.cashSources.length ? r.cashSources.map(s => '#'+s.num).join(';') : '';
-    csv += [r.age,r.year,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.srsWithdrawal,'"'+cashSourceLabel+'"',r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.srsContribution,r.totalCashExpenses,r.cashflow,r.drawdownTotal,r.cash,r.emergencyReserveTarget,r.employerCPF,r.oa,r.saOrRa,r.ma,r.bhs,r.cpfTotal,r.investTotal,r.policyTotal,r.srsValue,r.riskOn,r.riskOff,r.netWorth]
+    csv += [r.age,r.year,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.srsWithdrawal,'"'+cashSourceLabel+'"',r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.srsContribution,r.totalCashExpenses,r.cashflow,r.drawdownTotal,r.cash,r.liquidAssets,r.emergencyReserveTarget,r.employerCPF,r.oa,r.saOrRa,r.ma,r.bhs,r.cpfTotal,r.investTotal,r.policyTotal,r.srsValue,r.riskOn,r.riskOff,r.netWorth]
       .map(v => typeof v === 'string' ? v : Math.round((v||0)*100)/100).join(',') + '\n';
   });
   const name = (state.meta.clientName || 'client').replace(/[^a-z0-9]+/gi,'_');
