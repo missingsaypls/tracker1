@@ -275,8 +275,8 @@
       </div>
       <div class="topbar-actions">
         <button class="btn" onclick="document.getElementById('importFile').click()">Import plan</button>
-        <input type="file" id="importFile" accept="application/json" style="display:none" onchange="handleImport(event)">
-        <button class="btn" onclick="exportJSON()">Export plan (.json)</button>
+        <input type="file" id="importFile" accept=".json,.txt,application/json,text/plain" style="display:none" onchange="handleImport(event)">
+        <button class="btn" onclick="exportJSON()">Export plan (.txt)</button>
         <button class="btn btn-primary" onclick="exportCSV()">Export ledger (.csv)</button>
       </div>
     </div>
@@ -1627,7 +1627,7 @@ function downloadBlob(content, filename, mime){
 }
 function exportJSON(){
   const name = (state.meta.clientName || 'client').replace(/[^a-z0-9]+/gi,'_');
-  downloadBlob(JSON.stringify(state, null, 2), name + '_financial_plan.json', 'application/json');
+  downloadBlob(JSON.stringify(state, null, 2), name + '_financial_plan.txt', 'text/plain');
 }
 function handleImport(evt){
   const file = evt.target.files[0];
@@ -1639,7 +1639,7 @@ function handleImport(evt){
       state = loaded;
       initAll();
     } catch(err){
-      alert('This file could not be read as a saved plan. Please check it is a .json file exported from this tool.');
+      alert('This file could not be read as a saved plan. Please check it is a plan file exported from this tool (.txt or .json).');
     }
   };
   reader.readAsText(file);
