@@ -1108,7 +1108,7 @@ function showTab(id){
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.tab===id));
   if(id === 'drawdown') renderDrawdownTab();
   if(id === 'ledger') renderLedger();
-  if(id === 'charts') renderCharts();
+  if(id === 'charts') requestAnimationFrame(() => renderCharts());
 }
 
 /* =========================================================================
@@ -1527,6 +1527,7 @@ document.addEventListener('change', e => {
    CHARTS
    ========================================================================= */
 let charts = {};
+let currentChartRows = [];
 function destroyChart(key){ if(charts[key]){ charts[key].destroy(); delete charts[key]; } }
 function renderCharts(){
   if(typeof Chart === 'undefined'){
@@ -1589,8 +1590,9 @@ function renderCharts(){
 
   const slider = document.getElementById('yearSlider');
   slider.max = rows.length - 1;
+  currentChartRows = rows;
   if(!slider.dataset.bound){
-    slider.addEventListener('input', () => renderDonuts(rows, parseInt(slider.value)));
+    slider.addEventListener('input', () => renderDonuts(currentChartRows, parseInt(slider.value)));
     slider.dataset.bound = '1';
   }
   if(parseInt(slider.value) > rows.length-1) slider.value = 0;
@@ -1610,7 +1612,7 @@ function renderDonuts(rows, idx){
   destroyChart('compDonut');
   charts.compDonut = new Chart(document.getElementById('chartCompDonut'), {
     type:'doughnut',
-    data:{ labels:['Cash','CPF','Investments','Policies'], datasets:[{ data:[r.cash<0?0:r.cash, r.cpfTotal, r.investTotal, r.policyTotal], backgroundColor:['#B8792E','#1F6F54','#2C5FA8','#A23B2E'] }] },
+    data:{ labels:['Cash','CPF','Investments','Policies','SRS'], datasets:[{ data:[r.cash<0?0:r.cash, r.cpfTotal, r.investTotal, r.policyTotal, r.srsValue], backgroundColor:['#B8792E','#1F6F54','#2C5FA8','#A23B2E','#8B5FBF'] }] },
     options:{ plugins:{ legend:{position:'bottom'} } }
   });
 }
