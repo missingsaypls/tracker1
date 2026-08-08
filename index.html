@@ -346,6 +346,7 @@
               <li>New PRs in their 1st/2nd year (graduated rates) aren't modelled for clients already set to SC/PR — full rates are assumed there. For Employment Pass clients, you can simulate gaining PR status via the field on the Client tab; graduated 1st/2nd-year rates (per CPF Board's published F/G schedule) apply automatically before switching to full rates in year 3.</li>
               <li>SRS contributions are treated as a cash outflow into a separate pocket that grows at your chosen rate. Once drawdown starts, growth stops and the balance is split into 10 equal yearly withdrawals paid into liquid cash, matching the mandatory 10-year SRS drawdown rule. SRS withdrawals aren't taxed in this tool — add expected tax as a fixed expense if you want to account for it.</li>
               <li>Existing investments and policies: enter their current value directly rather than trying to simulate years of past history — the tool only projects forward from today.</li>
+              <li>The CPF-OA housing loan deduction pulls straight from OA each year; if OA runs out before the loan does, the remaining instalment automatically becomes a cash expense instead — check the "OA loan shortfall (cash)" column to see when that happens.</li>
               <li>Income, contributions and expenses shift on 1 January of the year they take effect — there's no mid-year proration.</li>
               <li>No income tax, CPF housing withdrawal, or property value is modelled — add income tax as a fixed yearly expense, and treat property as outside this cash-flow ledger unless you want to add its rental yield or sale proceeds as an income line.</li>
               <li>When liquid cash would run short in a year, the tool automatically draws down from investments, policies, and (if eligible) CPF OA in the order you set on the Drawdown sequence tab, before letting cash go negative.</li>
@@ -397,6 +398,19 @@
             <div class="field"><label>Special Account (SA)</label><input type="number" step="100" id="f-cpfSA"></div>
             <div class="field"><label>Retirement Account (RA)</label><input type="number" step="100" id="f-cpfRA"></div>
             <div class="field"><label>Medisave Account (MA)</label><input type="number" step="100" id="f-cpfMA"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">CPF-OA housing loan deduction</div>
+          <div class="card-desc">Simulates using CPF-OA to service a mortgage instalment — very common for Singapore households. If OA runs short in a given year, the remaining instalment automatically falls through to a cash expense instead.</div>
+          <div class="grid">
+            <div class="field"><label>OA deduction amount ($)</label><input type="number" step="10" id="f-oaLoanAmount"></div>
+            <div class="field"><label>Frequency</label>
+              <select id="f-oaLoanFreq"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
+            </div>
+            <div class="field"><label>Loan starts (year)</label><input type="number" id="f-oaLoanStart"></div>
+            <div class="field"><label>Loan ends (year)</label><input type="number" id="f-oaLoanEnd"><span class="hint">This is the loan duration — leave blank for an open-ended deduction</span></div>
           </div>
         </div>
 
@@ -601,6 +615,7 @@ function defaultState(){
       epCpfStartYear:null
     },
     cpfStart:{ oa:0, sa:0, ra:0, ma:0 },
+    cpfOaLoan:{ amount:0, freq:'monthly', startYear:null, endYear:null },
     rental:[], otherIncome:[], investments:[], policies:[], shieldBands:[],
     generalExpenses:[], fixedExpenses:[],
     cash:{ startingBalance:0, interestPct:0.5, emergencyMonths:6 },
@@ -898,6 +913,19 @@ function computeLedger(){
       }
     }
 
+    // CPF-OA housing loan deduction — simulates using OA to service a mortgage instalment.
+    // If OA runs short, the remaining instalment falls through to a cash expense instead.
+    let oaLoanFromOa = 0, oaLoanCashShortfall = 0;
+    if(cpfActive){
+      const loanActive = state.cpfOaLoan.amount && year >= (state.cpfOaLoan.startYear || state.meta.currentYear) && year <= (state.cpfOaLoan.endYear || 9999);
+      if(loanActive){
+        const loanAmt = state.cpfOaLoan.freq === 'monthly' ? state.cpfOaLoan.amount*12 : state.cpfOaLoan.amount;
+        oaLoanFromOa = Math.min(oa, loanAmt);
+        oa -= oaLoanFromOa;
+        oaLoanCashShortfall = loanAmt - oaLoanFromOa;
+      }
+    }
+
     // Investments — grow, pay/reinvest dividends, take contributions (values held on investState; totals finalised after drawdown)
     let investDividendCash=0, investContribution=0;
     const cashSources = [];
@@ -981,7 +1009,7 @@ function computeLedger(){
     const cpfLifePayout = (everHadCpf && age >= state.cpfLife.startAge) ? (state.cpfLife.monthlyPayout||0)*12 : 0;
 
     const totalCashIncome = nettYearly + rentalIncome + otherIncomeAmt + investDividendCash + policyCouponCash + policyMaturityCash + cpfLifePayout + srsWithdrawal;
-    const totalCashExpenses = generalExp + fixedExp + shieldCash + investContribution + policyPremium + srsContribution;
+    const totalCashExpenses = generalExp + fixedExp + shieldCash + investContribution + policyPremium + srsContribution + oaLoanCashShortfall;
     const cashflow = totalCashIncome - totalCashExpenses;
     cash = openingCash * (1 + (state.cash.interestPct||0)/100) + cashflow;
 
@@ -1053,7 +1081,7 @@ function computeLedger(){
       age, year, phase,
       grossMonthly, grossYearly, employeeCPF, employerCPF, nettYearly,
       rentalIncome, otherIncomeAmt, investDividendCash, policyCouponCash, policyMaturityCash, cpfLifePayout, srsWithdrawal,
-      totalCashIncome, generalExp, fixedExp, shieldCash, investContribution, policyPremium, srsContribution, totalCashExpenses,
+      totalCashIncome, generalExp, fixedExp, shieldCash, investContribution, policyPremium, srsContribution, oaLoanFromOa, oaLoanCashShortfall, totalCashExpenses,
       cashflow, openingCash, drawdownTotal, drawdownDetail, cash,
       emergencyReserveTarget, cashAboveReserve, liquidAssets,
       oa, saOrRa, saOrRaLabel, ma, ra, cpfTotal, bhs, oaDrawdownUnlocked, cpfLifeStarted,
@@ -1349,6 +1377,10 @@ const BINDINGS = [
   ['f-cpfSA', ['cpfStart','sa'], 'number'],
   ['f-cpfRA', ['cpfStart','ra'], 'number'],
   ['f-cpfMA', ['cpfStart','ma'], 'number'],
+  ['f-oaLoanAmount', ['cpfOaLoan','amount'], 'number'],
+  ['f-oaLoanFreq', ['cpfOaLoan','freq'], 'text'],
+  ['f-oaLoanStart', ['cpfOaLoan','startYear'], 'number'],
+  ['f-oaLoanEnd', ['cpfOaLoan','endYear'], 'number'],
   ['f-cashStart', ['cash','startingBalance'], 'number'],
   ['f-cashInterest', ['cash','interestPct'], 'number'],
   ['f-emergencyMonths', ['cash','emergencyMonths'], 'number'],
@@ -1440,9 +1472,9 @@ function renderLedger(){
   html += '<tr class="group-row">';
   html += '<th class="col-age" rowspan="2">Age</th><th class="col-year" rowspan="2">Year</th>';
   html += '<th data-group="income" colspan="10">Cash inflows</th>';
-  html += '<th data-group="expenses" colspan="7">Cash outflows</th>';
+  html += '<th data-group="expenses" colspan="8">Cash outflows</th>';
   html += '<th data-group="cashflow" colspan="5">Net cashflow</th>';
-  html += '<th data-group="cpf" colspan="6">CPF</th>';
+  html += '<th data-group="cpf" colspan="7">CPF</th>';
   html += '<th data-group="investments" colspan="' + (invCols.length+1) + '">Investments</th>';
   html += '<th data-group="policies" colspan="' + (polCols.length+1) + '">Policies</th>';
   html += '<th data-group="srs" colspan="1">SRS</th>';
@@ -1450,9 +1482,9 @@ function renderLedger(){
   html += '</tr>';
   html += '<tr class="col-row">';
   html += '<th data-group="income">Nett income</th><th data-group="income">Rental</th><th data-group="income">Other inc.</th><th data-group="income">Inv. dividends</th><th data-group="income">Policy coupons</th><th data-group="income">Policy maturity</th><th data-group="income">CPF LIFE</th><th data-group="income">SRS withdrawal</th><th data-group="income">Cash-generating assets</th><th data-group="income">Total cash in</th>';
-  html += '<th data-group="expenses">General (infl.)</th><th data-group="expenses">Fixed</th><th data-group="expenses">Shield (cash)</th><th data-group="expenses">Inv. contrib.</th><th data-group="expenses">Policy premiums</th><th data-group="expenses">SRS contribution</th><th data-group="expenses">Total cash out</th>';
+  html += '<th data-group="expenses">General (infl.)</th><th data-group="expenses">Fixed</th><th data-group="expenses">Shield (cash)</th><th data-group="expenses">Inv. contrib.</th><th data-group="expenses">Policy premiums</th><th data-group="expenses">SRS contribution</th><th data-group="expenses">OA loan shortfall (cash)</th><th data-group="expenses">Total cash out</th>';
   html += '<th data-group="cashflow">Net cashflow</th><th data-group="cashflow">Drawn from assets</th><th data-group="cashflow">Closing cash</th><th data-group="cashflow">Liquid assets (cash+OA)</th><th data-group="cashflow">Emergency reserve target</th>';
-  html += '<th data-group="cpf">Employer CPF</th><th data-group="cpf">OA</th><th data-group="cpf">SA/RA</th><th data-group="cpf">MA</th><th data-group="cpf">BHS cap</th><th data-group="cpf">CPF total</th>';
+  html += '<th data-group="cpf">Employer CPF</th><th data-group="cpf">OA</th><th data-group="cpf">OA loan (from OA)</th><th data-group="cpf">SA/RA</th><th data-group="cpf">MA</th><th data-group="cpf">BHS cap</th><th data-group="cpf">CPF total</th>';
   invCols.forEach(c => html += '<th data-group="investments">' + c.label + '</th>');
   html += '<th data-group="investments">Investments total</th>';
   polCols.forEach(c => html += '<th data-group="policies">' + c.label + '</th>');
@@ -1483,6 +1515,7 @@ function renderLedger(){
     html += '<td class="mono" data-group="expenses">' + fmt(r.investContribution) + '</td>';
     html += '<td class="mono" data-group="expenses">' + fmt(r.policyPremium) + '</td>';
     html += '<td class="mono" data-group="expenses">' + fmt(r.srsContribution) + '</td>';
+    html += '<td class="mono" data-group="expenses">' + fmt(r.oaLoanCashShortfall) + '</td>';
     html += '<td class="mono" data-group="expenses">' + fmt(r.totalCashExpenses) + '</td>';
     const drawdownTitle = r.drawdownDetail.length ? r.drawdownDetail.map(d => d.label + ': S$' + fmt(d.amount)).join(' · ') : '';
     html += '<td class="mono ' + (r.cashflow<0?'neg':'') + '" data-group="cashflow">' + fmt(r.cashflow) + '</td>';
@@ -1492,6 +1525,7 @@ function renderLedger(){
     html += '<td class="mono" data-group="cashflow">' + fmt(r.emergencyReserveTarget) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.employerCPF) + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.oa) + '</td>';
+    html += '<td class="mono" data-group="cpf">' + fmt(r.oaLoanFromOa) + '</td>';
     const raAsterisk = (r.cpfLifeStarted && r.saOrRaLabel === 'RA') ? '<span title="Accumulated after CPF LIFE payouts began — interest-free, not part of the guaranteed monthly payout">*</span>' : '';
     html += '<td class="mono" data-group="cpf">' + fmt(r.saOrRa) + raAsterisk + '</td>';
     html += '<td class="mono" data-group="cpf">' + fmt(r.ma) + '</td>';
@@ -1591,6 +1625,8 @@ function renderCharts(){
   const slider = document.getElementById('yearSlider');
   slider.max = rows.length - 1;
   currentChartRows = rows;
+  destroyChart('riskDonut');
+  destroyChart('compDonut');
   if(!slider.dataset.bound){
     slider.addEventListener('input', () => renderDonuts(currentChartRows, parseInt(slider.value)));
     slider.dataset.bound = '1';
@@ -1601,20 +1637,30 @@ function renderCharts(){
 function renderDonuts(rows, idx){
   const r = rows[idx];
   document.getElementById('yearSliderLabel').textContent = 'Age ' + r.age + ' · ' + r.year;
+  const riskData = [r.riskOn, r.riskOff];
+  const compData = [r.cash<0?0:r.cash, r.cpfTotal, r.investTotal, r.policyTotal, r.srsValue];
 
-  destroyChart('riskDonut');
-  charts.riskDonut = new Chart(document.getElementById('chartRiskDonut'), {
-    type:'doughnut',
-    data:{ labels:['Risk-on','Risk-off'], datasets:[{ data:[r.riskOn, r.riskOff], backgroundColor:['#2C5FA8','#1F6F54'] }] },
-    options:{ plugins:{ legend:{position:'bottom'} } }
-  });
+  if(charts.riskDonut){
+    charts.riskDonut.data.datasets[0].data = riskData;
+    charts.riskDonut.update();
+  } else {
+    charts.riskDonut = new Chart(document.getElementById('chartRiskDonut'), {
+      type:'doughnut',
+      data:{ labels:['Risk-on','Risk-off'], datasets:[{ data:riskData, backgroundColor:['#2C5FA8','#1F6F54'] }] },
+      options:{ animation:{duration:300}, plugins:{ legend:{position:'bottom'} } }
+    });
+  }
 
-  destroyChart('compDonut');
-  charts.compDonut = new Chart(document.getElementById('chartCompDonut'), {
-    type:'doughnut',
-    data:{ labels:['Cash','CPF','Investments','Policies','SRS'], datasets:[{ data:[r.cash<0?0:r.cash, r.cpfTotal, r.investTotal, r.policyTotal, r.srsValue], backgroundColor:['#B8792E','#1F6F54','#2C5FA8','#A23B2E','#8B5FBF'] }] },
-    options:{ plugins:{ legend:{position:'bottom'} } }
-  });
+  if(charts.compDonut){
+    charts.compDonut.data.datasets[0].data = compData;
+    charts.compDonut.update();
+  } else {
+    charts.compDonut = new Chart(document.getElementById('chartCompDonut'), {
+      type:'doughnut',
+      data:{ labels:['Cash','CPF','Investments','Policies','SRS'], datasets:[{ data:compData, backgroundColor:['#B8792E','#1F6F54','#2C5FA8','#A23B2E','#8B5FBF'] }] },
+      options:{ animation:{duration:300}, plugins:{ legend:{position:'bottom'} } }
+    });
+  }
 }
 
 /* =========================================================================
@@ -1649,11 +1695,11 @@ function handleImport(evt){
 }
 function exportCSV(){
   const rows = computeLedger();
-  const header = ['Age','Year','Nett income','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','SRS withdrawal','Cash-generating assets','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','SRS contribution','Total cash out','Net cashflow','Drawn from assets','Closing cash','Liquid assets','Emergency reserve target','Employer CPF','OA','SA/RA','MA','BHS cap','CPF total','Investments total','Policies total','SRS value','Risk-on','Risk-off','Net worth'];
+  const header = ['Age','Year','Nett income','Rental','Other income','Inv dividends','Policy coupons','Policy maturity','CPF LIFE','SRS withdrawal','Cash-generating assets','Total cash in','General exp','Fixed exp','Shield cash','Inv contrib','Policy premiums','SRS contribution','OA loan shortfall (cash)','Total cash out','Net cashflow','Drawn from assets','Closing cash','Liquid assets','Emergency reserve target','Employer CPF','OA','OA loan (from OA)','SA/RA','MA','BHS cap','CPF total','Investments total','Policies total','SRS value','Risk-on','Risk-off','Net worth'];
   let csv = header.join(',') + '\n';
   rows.forEach(r => {
     const cashSourceLabel = r.cashSources.length ? r.cashSources.map(s => '#'+s.num).join(';') : '';
-    csv += [r.age,r.year,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.srsWithdrawal,'"'+cashSourceLabel+'"',r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.srsContribution,r.totalCashExpenses,r.cashflow,r.drawdownTotal,r.cash,r.liquidAssets,r.emergencyReserveTarget,r.employerCPF,r.oa,r.saOrRa,r.ma,r.bhs,r.cpfTotal,r.investTotal,r.policyTotal,r.srsValue,r.riskOn,r.riskOff,r.netWorth]
+    csv += [r.age,r.year,r.nettYearly,r.rentalIncome,r.otherIncomeAmt,r.investDividendCash,r.policyCouponCash,r.policyMaturityCash,r.cpfLifePayout,r.srsWithdrawal,'"'+cashSourceLabel+'"',r.totalCashIncome,r.generalExp,r.fixedExp,r.shieldCash,r.investContribution,r.policyPremium,r.srsContribution,r.oaLoanCashShortfall,r.totalCashExpenses,r.cashflow,r.drawdownTotal,r.cash,r.liquidAssets,r.emergencyReserveTarget,r.employerCPF,r.oa,r.oaLoanFromOa,r.saOrRa,r.ma,r.bhs,r.cpfTotal,r.investTotal,r.policyTotal,r.srsValue,r.riskOn,r.riskOff,r.netWorth]
       .map(v => typeof v === 'string' ? v : Math.round((v||0)*100)/100).join(',') + '\n';
   });
   const name = (state.meta.clientName || 'client').replace(/[^a-z0-9]+/gi,'_');
